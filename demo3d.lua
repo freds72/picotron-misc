@@ -130,6 +130,7 @@ function make_cam(x0,y0,focal)
 
 	return {
 		pos={0,0,0},
+		focal=focal,
 		control=function(self,dist)
 			if btn(0) then dyangle+=1 end
 			if btn(1) then dyangle+=-1 end
@@ -178,34 +179,60 @@ function draw_model(model,m_obj,cam)
 	-- world to cam
 	local m=m_obj:matmul(cam.m)
 
-	local verts={}
 	for i,face in pairs(model.f) do
 		-- is face visible?
-		local d=face.n:dot(cam_pos)
-		if d>face.cp then
+		if face.n:dot(cam_pos)>face.cp then
 			local avg=vec(0,0,0,0)
+			local verts,outcode,nearclip={},0xffffffff,0
 			for k,v in ipairs(face) do
-				-- transform to world
-				local p={pos=v:matmul(m)}
-				avg+=p.pos
+				-- transform to cam
+				local code,a=2,v:matmul(m)
+				avg+=a
+				if(a.z>1) code=0
+				local w=cam.focal/a.z
 				-- attach u/v coords to output
-				p.u=face.uv[2*k-1]*8
-				p.v=face.uv[2*k]*8
-				verts[k]=p			
+				verts[k]={pos=a,x=480/2+w*a.x,y=270/2-w*a.y,w=w,u=face.uv[2*k-1]*8,v=face.uv[2*k]*8}	
+				outcode&=code
+				nearclip+=code&2
 			end
-			-- transform to camera & draw			
-			local tmp=cam:project(verts)
-			polytex(tmp,4,ss,i)
-			--polyline(tmp,4,7)
-			-- draw normals
-			avg/=4			
-			avg[3]=1
-			local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul(m)}})
-			line(tmp[1].x,tmp[1].y,tmp[2].x,tmp[2].y,8)
+			-- out of screen?
+			if outcode==0 then
+				if nearclip!=0 then                
+					-- near clipping required?
+					local res,v0={},verts[#verts]
+					local d0=v0.pos.z-1
+					for i,v1 in ipairs(verts) do
+						local side=d0>0
+						if(side) add(res,v0)
+						local d1=v1.pos.z-1
+						if (d1>0)!=side then
+							-- clip!
+							local t=d0/(d0-d1)
+							-- project
+							-- z is clipped to near plane
+							add(res,{
+								x=480/2+lerp(v0.pos.x,v1.pos.x,t)*cam.focal,
+								y=270/2-lerp(v0.pos.y,v1.pos.y,t)*cam.focal,
+								w=cam.focal, -- 32/1
+								u=lerp(v0.u,v1.u,t),
+								v=lerp(v0.v,v1.v,t)})
+						end
+						v0,d0=v1,d1
+					end
+					verts=res
+				end			
+				polytex(verts,#verts,ss,i)
+				polyline(verts,#verts,7)
+				-- draw normals
+				avg/=4
+				avg[3]=1
+				local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul(m)}})
+				line(tmp[1].x,tmp[1].y,tmp[2].x,tmp[2].y,8)
+			end
 		end
 	end
-	v_print(cam_pos,0,64,7)
-	m_print(m_inv,0,96,7)
+	--v_print(cam_pos,0,64,7)
+	--m_print(m_inv,0,96,7)
 	   
   --line(480/2,270/2,480/2+64*cam.pos.x,270/2-64*cam.pos.z,7)
 end
