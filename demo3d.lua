@@ -11,71 +11,74 @@ end
 
 -- vector helpers
 function v_normz(v)
-	local d=sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])
+	local d=v:magnitude()
 	if d>0 then
-		return vec(v.x/d,v.y/d,v.z/d,0)
+		return vec(v.x/d,v.y/d,v.z/d)
 	end
-	return vec(0,0,0,0)
+	return vec(0,0,0)
 end
 
 function m_print(m,xx,yy,c)
 	for j=0,3 do
-	 local x,y,z,w=m:get(0,j,4)
-	 print(string.format("%.3f\t%.3f\t%.3f\t%.3f",x,y,z,w),xx,yy,c)
+	 local x,y,z=m:get(0,j,3)
+	 print(string.format("%.3f\t%.3f\t%.3f",x,y,z),xx,yy,c)
 	 yy+=8
 	end
 end
 
 function v_print(v,xx,yy,c)
- local x,y,z,w=v:get(0,4)
- print(string.format("%.3f\t%.3f\t%.3f\t%.3f",x,y,z,w),xx,yy,c)  
+ local x,y,z=v:get(0,4)
+ print(string.format("%.3f\t%.3f\t%.3f",x,y,z),xx,yy,c)  
 end
 
 function make_m()
-	local m = userdata("f64",4,4)
+	local m = userdata("f64",3,4)
 	set(m, 0, 0,
-		1, 0, 0, 0,
-		0, 1, 0, 0,
-		0, 0, 1, 0,
-		0, 0, 0, 1 
-	)
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1,
+		0, 0, 0)
 	return m
 end
 
+function m_transpose(m)
+	m[1],m[3]=m[3],m[1]
+	m[2],m[6]=m[6],m[2]
+	m[5],m[7]=m[7],m[5]
+end
+
 function m_translate(v)
-	local m = userdata("f64",4,4)
+	local m = userdata("f64",3,4)
 	local x,y,z=v:get(0,3)
 	set(m, 0, 0,
-		1, 0, 0, 0,
-		0, 1, 0, 0,
-		0, 0, 1, 0,
-		x, y, z, 1 
-	)
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1,
+		x, y, z)
 	return m
 end
 
 function m_rotation(axis,angle)
 	local c,s=cos(angle),-sin(angle)
-	local m = userdata("f64",4,4)
+	local m = userdata("f64",3,4)
 	if axis=="x" then
 		set(m, 0, 0,
-			1, 0, 0, 0,
-			0, c, -s, 0,
-			0, s, c, 0,
-			0, 0, 0, 1)		
+			1, 0,  0,  
+			0, c, -s,
+			0, s,  c, 
+			0, 0,  0)		
 	elseif axis=="y" then
 		set(m, 0, 0,
-			c, 0, s,  0,
-			0, 1, 0,  0,
-			-s, 0, c, 0,
-			0, 0, 0, 1)
+			c,  0, s, 
+			0,  1, 0, 
+			-s, 0, c,
+			0, 0, 0)
 	else
 		set(m,   0, 0,
-			c, -s, 0, 0,
-			s, c,  0, 0,
-			0, 0,  1, 0,
-			0, 0,  0, 1 
-		)		
+			c, -s, 0,
+			s, c,  0,
+			0, 0,  1,
+			0, 0,  0)		
 	end
 	return m
 end
@@ -104,14 +107,14 @@ end
 local cube_model=prepare_model({
 		-- NOTE: must have w=1 to work with translation matrix
 		v={
-			vec(0,0,0,1),
-			vec(1,0,0,1),
-			vec(1,0,1,1),
-			vec(0,0,1,1),
-			vec(0,1,0,1),
-			vec(1,1,0,1),
-			vec(1,1,1,1),
-			vec(0,1,1,1),
+			vec(0,0,0),
+			vec(1,0,0),
+			vec(1,0,1),
+			vec(0,0,1),
+			vec(0,1,0),
+			vec(1,1,0),
+			vec(1,1,1),
+			vec(0,1,1),
 		},
 		-- faces + vertex uv's
 		-- NOTE: must use <4 to avoid texture spilling
@@ -143,15 +146,16 @@ function make_cam(x0,y0,focal)
 			dyangle*=0.8
 			dzangle*=0.8
 			
-			local m=m_rotation("y",yangle):matmul(m_rotation("x",zangle))
-			local pos=vec(0,0,-dist,0):matmul(m)
-			-- NOTE: needed to make it "translation" compatible
-			set(pos,3,1)
-			
-			-- inverse view matrix
-			m:transpose(m)
+			local m=m_rotation("x",zangle):matmul3d(m_rotation("z",yangle))
+			local pos=vec(0,0,-dist):matmul3d(m)
 
-			self.m=m_translate(pos*-1):matmul(m)
+			-- inverse view matrix
+			--m:transpose(m)
+			m[1],m[3]=m[3],m[1]
+			m[2],m[6]=m[6],m[2]
+			m[5],m[7]=m[7],m[5]
+
+			self.m=m_translate(pos*-1):matmul3d(m)
 			self.pos=pos			
 		end,
 		project=function(self,verts)
@@ -160,7 +164,7 @@ function make_cam(x0,y0,focal)
 			for i=1,#verts do
 			  local vert=verts[i]
 				local v=vert.pos
-				local x,y,z=v.x,v.y,v.z
+				local x,y,z=v:get(0,3)
 				local w=focal/z
 				out[i]={x=x0+x*w,y=y0-y*w,w=w,u=vert.u,v=vert.v}
 			end
@@ -172,24 +176,26 @@ end
 function draw_model(model,m_obj,cam)
 	-- cam pos in object space
 	local m_inv=make_m()
-	m_obj:transpose(m_inv)
-	-- NOTE: needed to kill the translation part
-	m_inv[12],m_inv[13],m_inv[14]=0,0,0
-	local cam_pos=cam.pos:matmul(m_translate(vec(-m_obj[12],-m_obj[13],-m_obj[14])):matmul(m_inv))
+	set(m_inv,0,0,get(m_obj,0,0,9))
+	m_transpose(m_inv)
+	--m_obj:transpose(m_inv)
+	local cam_pos=cam.pos:matmul3d(m_translate(vec(-m_obj[9],-m_obj[10],-m_obj[11])):matmul3d(m_inv))
 	
 	-- object to world
 	-- world to cam
-	local m=m_obj:matmul(cam.m)
+	local m=m_obj:matmul3d(cam.m)
+	local m_n=make_m()
+	set(m_n,0,0,get(m,0,0,9))
 
 	for i,face in pairs(model.f) do
 		-- is face visible?
 		if face.n:dot(cam_pos)>face.cp then
-			local avg=vec(0,0,0,0)
+			local avg=vec(0,0,0)
 			local verts,outcode,nearclip={},0xffffffff,0
 			for k,v in ipairs(face) do
 				-- transform to cam
-				local code,a=2,v:matmul(m)
-				avg+=a
+				local code,a=2,v:matmul3d(m)
+				avg:add(a,true)
 				if(a.z>1) code=0
 				local w=cam.focal/a.z
 				-- attach u/v coords to output
@@ -224,13 +230,12 @@ function draw_model(model,m_obj,cam)
 					verts=res
 				end			
 				polytex(verts,#verts,ss,i)
-				polyline(verts,#verts,7)
+				--polyline(verts,#verts,7)
 
 				-- debug: draw normals
-				avg/=4
-				avg[3]=1
-				local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul(m)}})
-				line(tmp[1].x,tmp[1].y,tmp[2].x,tmp[2].y,8)
+				--avg/=4
+				--local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul3d(m_n)}})
+				--line(tmp[1].x,tmp[1].y,tmp[2].x,tmp[2].y,8)
 			end
 		end
 	end
@@ -267,14 +272,25 @@ local _t=time()
 function _draw()
 	cls()
 
-	local m = m_translate(vec(-0.5+4*cos(time()/8),-0.5,-0.5))
-	draw_model(cube_model,m,cam)
+	local r={"x","y","z"}
+	for i=-2,3 do
+		for j=-2,3 do			
+			local m = m_translate(vec(2*i,2*j,0))
+			draw_model(cube_model,m,cam)
+		end
+	end
 
-	local m = m_rotation("y",time()/16):matmul(m_translate(vec(2.5,-0.5,-0.5)))
-	draw_model(cube_model,m,cam)
+	--local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation("y",time()/16)):matmul3d(m_translate(vec(2.5,0,0)))
+	--draw_model(cube_model,m,cam)
 	
 	local t1=time()
-	print(string.format("tline3d DEMO\nfps: %.i\ncpu: %.3f",flr(1/(t1-_t)),100*stat(1)),2,2,8)
+	local s=string.format("tline3d DEMO\nfps: %.i\ncpu: %.3f",flr(1/(t1-_t)),100*stat(1))
+	for i=-1,1 do
+		for j=-1,1 do
+			print(s,2+i,2+j,0)
+		end
+	end
+	print(s,2,2,7)
 	_t = t1
 end
 
