@@ -10,7 +10,6 @@ function lerp(a,b,t)
 end
 
 -- vector helpers
--- vector helpers
 function v_normz(v)
 	local d=sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])
 	if d>0 then
@@ -22,7 +21,7 @@ end
 function m_print(m,xx,yy,c)
 	for j=0,3 do
 	 local x,y,z,w=m:get(0,j,4)
-	 print(string.format("%.3f\t\t%.3f\t\t%.3f\t\t%.3f",x,y,z,w),xx,yy,c)
+	 print(string.format("%.3f\t%.3f\t%.3f\t%.3f",x,y,z,w),xx,yy,c)
 	 yy+=8
 	end
 end
@@ -82,7 +81,7 @@ function m_rotation(axis,angle)
 end
 
 function m_fwd(m)
-	return vec(m[2],m[6],m[10],1)
+	return vec(m[2],m[6],m[10],0)
 end
 
 function prepare_model(model)
@@ -93,16 +92,17 @@ function prepare_model(model)
 		end
 
 		-- normal
+		-- NOTE: pure vector without w component
 		f.n=v_normz((f[4]-f[1]):cross(f[2]-f[1]))
 		-- fast viz check
 		f.cp=f.n:dot(f[1])
-
 	end
 	return model
 end
 
 -- models
 local cube_model=prepare_model({
+		-- NOTE: must have w=1 to work with translation matrix
 		v={
 			vec(0,0,0,1),
 			vec(1,0,0,1),
@@ -114,6 +114,7 @@ local cube_model=prepare_model({
 			vec(0,1,1,1),
 		},
 		-- faces + vertex uv's
+		-- NOTE: must use <4 to avoid texture spilling
 		f={
 			{1,4,3,2,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
 			{1,2,6,5,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
@@ -144,7 +145,7 @@ function make_cam(x0,y0,focal)
 			
 			local m=m_rotation("y",yangle):matmul(m_rotation("x",zangle))
 			local pos=vec(0,0,-dist,0):matmul(m)
-			
+			-- NOTE: needed to make it "translation" compatible
 			set(pos,3,1)
 			
 			-- inverse view matrix
@@ -172,6 +173,7 @@ function draw_model(model,m_obj,cam)
 	-- cam pos in object space
 	local m_inv=make_m()
 	m_obj:transpose(m_inv)
+	-- NOTE: needed to kill the translation part
 	m_inv[12],m_inv[13],m_inv[14]=0,0,0
 	local cam_pos=cam.pos:matmul(m_translate(vec(-m_obj[12],-m_obj[13],-m_obj[14])):matmul(m_inv))
 	
@@ -223,7 +225,8 @@ function draw_model(model,m_obj,cam)
 				end			
 				polytex(verts,#verts,ss,i)
 				polyline(verts,#verts,7)
-				-- draw normals
+
+				-- debug: draw normals
 				avg/=4
 				avg[3]=1
 				local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul(m)}})
@@ -271,7 +274,7 @@ function _draw()
 	draw_model(cube_model,m,cam)
 	
 	local t1=time()
-	print("tline3d DEMO\nangle:"..(flr(100*cam.m[1])/10).."\nfps: "..flr(1/(t1-_t)).."\ncpu: "..(flr(1000*stat(1))/10).."%",2,2,8)
+	print(string.format("tline3d DEMO\nfps: %.i\ncpu: %.3f",flr(1/(t1-_t)),100*stat(1)),2,2,8)
 	_t = t1
 end
 
