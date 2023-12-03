@@ -19,16 +19,17 @@ function v_normz(v)
 	return vec(0,0,0,0)
 end
 
-function m_print(m)
+function m_print(m,xx,yy,c)
 	for j=0,3 do
 	 local x,y,z,w=m:get(0,j,4)
-	 print(string.format("%.3f\t%.3f\t%.3f\t%.3f",x,y,z,w))
+	 print(string.format("%.3f\t\t%.3f\t\t%.3f\t\t%.3f",x,y,z,w),xx,yy,c)
+	 yy+=8
 	end
 end
 
-function v_print(v)
+function v_print(v,xx,yy,c)
  local x,y,z,w=v:get(0,4)
- print(string.format("%.3f\t%.3f\t%.3f\t%.3f",x,y,z,w))  
+ print(string.format("%.3f\t%.3f\t%.3f\t%.3f",x,y,z,w),xx,yy,c)  
 end
 
 function make_m()
@@ -114,12 +115,12 @@ local cube_model=prepare_model({
 		},
 		-- faces + vertex uv's
 		f={
-			{1,4,3,2,uv={0,0,4,0,4,4,0,4}},
-			{1,2,6,5,uv={0,0,4,0,4,4,0,4}},
-			{2,3,7,6,uv={0,0,4,0,4,4,0,4}},
-			{3,4,8,7,uv={0,0,4,0,4,4,0,4}},
-			{4,1,5,8,uv={0,0,4,0,4,4,0,4}},
-			{5,6,7,8,uv={0,0,4,0,4,4,0,4}},
+			{1,4,3,2,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{1,2,6,5,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{2,3,7,6,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{3,4,8,7,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{4,1,5,8,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{5,6,7,8,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
 		}
 	})
 
@@ -146,21 +147,16 @@ function make_cam(x0,y0,focal)
 			set(pos,3,1)
 			
 			-- inverse view matrix
-			-- only invert orientation part		
-			m[1],m[4] = m[4],m[1]
-			m[2],m[8] = m[8],m[2]
-			m[6],m[9] = m[9],m[6]		
+			m:transpose(m)
 
-			--local pos=vec(yangle,zangle,-dist,1)
-			--self.m=m_translate(pos*-1):matmul(m)
 			self.m=m_translate(pos*-1):matmul(m)
 			self.pos=pos			
 		end,
 		project=function(self,verts)
 			local out={}
 			--for i,vert in pairs(verts) do
-			for i=4,1,-1 do
-			   local vert=verts[i]
+			for i=1,#verts do
+			  local vert=verts[i]
 				local v=vert.pos
 				local x,y,z=v.x,v.y,v.z
 				local w=focal/z
@@ -171,28 +167,27 @@ function make_cam(x0,y0,focal)
 	}
 end
 
-function draw_model(model,m,cam)
+function draw_model(model,m_obj,cam)
 	-- cam pos in object space
 	local m_inv=make_m()
-	m:transpose(m_inv)
-	local x,y,z=m[12],m[13],m[14]
-	set(m_inv,0,3,-x,-y,-z)
-	local cam_pos=cam.pos:matmul(m_inv)
-   
-	--printh(cam_pos)
-
+	m_obj:transpose(m_inv)
+	m_inv[12],m_inv[13],m_inv[14]=0,0,0
+	local cam_pos=cam.pos:matmul(m_translate(vec(-m_obj[12],-m_obj[13],-m_obj[14])):matmul(m_inv))
+	
 	-- object to world
 	-- world to cam
-	local m=m:matmul(cam.m)
+	local m=m_obj:matmul(cam.m)
 
 	local verts={}
 	for i,face in pairs(model.f) do
 		-- is face visible?
 		local d=face.n:dot(cam_pos)
 		if d>face.cp then
-			for k=1,4 do
+			local avg=vec(0,0,0,0)
+			for k,v in ipairs(face) do
 				-- transform to world
-				local p={pos=face[k]:matmul(m)}
+				local p={pos=v:matmul(m)}
+				avg+=p.pos
 				-- attach u/v coords to output
 				p.u=face.uv[2*k-1]*8
 				p.v=face.uv[2*k]*8
@@ -201,13 +196,16 @@ function draw_model(model,m,cam)
 			-- transform to camera & draw			
 			local tmp=cam:project(verts)
 			polytex(tmp,4,ss,i)
-			polyline(tmp,4,7)
+			--polyline(tmp,4,7)
+			-- draw normals
+			avg/=4			
+			avg[3]=1
+			local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul(m)}})
+			line(tmp[1].x,tmp[1].y,tmp[2].x,tmp[2].y,8)
 		end
 	end
-	cursor(0,64)
-	v_print(cam_pos)
-	cursor(0,96)
-	m_print(m_inv)
+	v_print(cam_pos,0,64,7)
+	m_print(m_inv,0,96,7)
 	   
   --line(480/2,270/2,480/2+64*cam.pos.x,270/2-64*cam.pos.z,7)
 end
@@ -239,12 +237,10 @@ local _t=time()
 function _draw()
 	cls()
 
-	local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul(m_rotation("x",time()/8))
-
+	local m = m_translate(vec(-0.5+4*cos(time()/8),-0.5,-0.5))
 	draw_model(cube_model,m,cam)
 
-	local m =m_rotation("y",time()/16):matmul(m_translate(vec(2.5,-0.5,-0.5)))
-
+	local m = m_rotation("y",time()/16):matmul(m_translate(vec(2.5,-0.5,-0.5)))
 	draw_model(cube_model,m,cam)
 	
 	local t1=time()
@@ -297,10 +293,10 @@ function polytex(p,np,texture,color)
 			ldw=(w1-lw)/dy
 			--sub-pixel correction
 			local cy=y-y0
-			lx=lx+cy*ldx
-			lu=lu+cy*ldu
-			lv=lv+cy*ldv
-			lw=lw+cy*ldw
+			lx+=cy*ldx
+			lu+=cy*ldu
+			lv+=cy*ldv
+			lw+=cy*ldw
 		end   
 		while ry<y do
 			local v0=p[rj]
@@ -322,34 +318,22 @@ function polytex(p,np,texture,color)
 			rdw=(w1-rw)/dy
 			--sub-pixel correction
 			local cy=y-y0
-			rx=rx+cy*rdx
-			ru=ru+cy*rdu
-			rv=rv+cy*rdv
-			rw=rw+cy*rdw
+			rx+=cy*rdx
+			ru+=cy*rdu
+			rv+=cy*rdv
+			rw+=cy*rdw
 		end
+		 
+	  tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
 	
-	 
-		do 	   
-			local dx=lx-rx
-			if dx>0 then
-				local du,dv,dw=(lu-ru)/dx,(lv-rv)/dx,(lw-rw)/dx
-				if(rx<0) ru-=rx*du rv-=rx*dv rw-=rx*dw rx=0
-				local sa=1-rx%1
-				local ru=ru+sa*du
-				local rv=rv+sa*dv
-				local rw=rw+sa*dw
-			   tline3d(texture,rx,y,flr(lx)-1,y,ru,rv,lu,lv,rw,lw)
-			end
-		end
-
-		lx=lx+ldx
-		lu=lu+ldu
-		lv=lv+ldv
-		lw=lw+ldw
-		rx=rx+rdx
-		ru=ru+rdu
-		rv=rv+rdv
-		rw=rw+rdw
+		lx+=ldx
+		lu+=ldu
+		lv+=ldv
+		lw+=ldw
+		rx+=rdx
+		ru+=rdu
+		rv+=rdv
+		rw+=rdw
     end
 end
 
