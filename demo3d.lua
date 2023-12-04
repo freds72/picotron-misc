@@ -95,7 +95,6 @@ function prepare_model(model)
 		end
 
 		-- normal
-		-- NOTE: pure vector without w component
 		f.n=v_normz((f[4]-f[1]):cross(f[2]-f[1]))
 		-- fast viz check
 		f.cp=f.n:dot(f[1])
@@ -105,7 +104,6 @@ end
 
 -- models
 local cube_model=prepare_model({
-		-- NOTE: must have w=1 to work with translation matrix
 		v={
 			vec(0,0,0),
 			vec(1,0,0),
@@ -133,15 +131,15 @@ function make_cam(x0,y0,focal)
 	local dyangle,dzangle=0,0
 
 	return {
-		pos={0,0,0},
+		pos=vec(0,0,0),
 		focal=focal,
 		control=function(self,dist)
 			if btn(0) then dyangle+=1 end
 			if btn(1) then dyangle+=-1 end
 			if btn(2) then dzangle+=1 end
 			if btn(3) then dzangle+=-1 end
-			yangle+=dyangle/128--+0.01
-			zangle+=dzangle/128--+0.005
+			yangle+=dyangle/256--+0.01
+			zangle+=dzangle/256--+0.005
 			-- friction
 			dyangle*=0.8
 			dzangle*=0.8
@@ -175,7 +173,7 @@ end
 
 function draw_model(model,m_obj,cam)
 	-- cam pos in object space
-	local m_inv=make_m()
+	local m_inv=userdata("f64",3,4)
 	set(m_inv,0,0,get(m_obj,0,0,9))
 	m_transpose(m_inv)
 	--m_obj:transpose(m_inv)
@@ -199,7 +197,7 @@ function draw_model(model,m_obj,cam)
 				if(a.z>1) code=0
 				local w=cam.focal/a.z
 				-- attach u/v coords to output
-				verts[k]={pos=a,x=480/2+w*a.x,y=270/2-w*a.y,w=w,u=face.uv[2*k-1]*8,v=face.uv[2*k]*8}	
+				verts[k]={v=a,out=vec(480/2+w*a.x,270/2-w*a.y,w,face.uv[2*k-1]*8*w,face.uv[2*k]*8*w)}	
 				outcode&=code
 				nearclip+=code&2
 			end
@@ -207,30 +205,24 @@ function draw_model(model,m_obj,cam)
 			if outcode==0 then
 				if nearclip!=0 then                
 					-- near clipping required?
-					local res,v0={},verts[#verts]
-					local d0=v0.pos.z-1
+					local w,res,v0=cam.focal,{},verts[#verts]
+					local d0=v0.v.z-1
 					for i,v1 in ipairs(verts) do
 						local side=d0>0
 						if(side) add(res,v0)
-						local d1=v1.pos.z-1
+						local d1=v1.v.z-1
 						if (d1>0)!=side then
 							-- clip!
-							local t=d0/(d0-d1)
 							-- project
 							-- z is clipped to near plane
-							add(res,{
-								x=480/2+lerp(v0.pos.x,v1.pos.x,t)*cam.focal,
-								y=270/2-lerp(v0.pos.y,v1.pos.y,t)*cam.focal,
-								w=cam.focal, -- 32/1
-								u=lerp(v0.u,v1.u,t),
-								v=lerp(v0.v,v1.v,t)})
+							add(res,{out=lerp(v0.out,v1.out,d0/(d0-d1))})
 						end
 						v0,d0=v1,d1
 					end
 					verts=res
 				end			
 				polytex(verts,#verts,ss,i)
-				--polyline(verts,#verts,7)
+				polyline(verts,#verts,7)
 
 				-- debug: draw normals
 				--avg/=4
@@ -272,10 +264,11 @@ local _t=time()
 function _draw()
 	cls()
 
+   srand(42)
 	local r={"x","y","z"}
 	for i=-2,3 do
 		for j=-2,3 do			
-			local m = m_translate(vec(2*i,2*j,0))
+			local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation(rnd(r),(time()+i*j)/16)):matmul3d(m_translate(vec(2*i,2*j,0)))
 			draw_model(cube_model,m,cam)
 		end
 	end
@@ -299,8 +292,8 @@ function polytex(p,np,texture,color)
 	local miny,maxy,mini=32000,-32000
 	-- find extent
 	for i=1,np do
-		local pi=p[i]
-		local y=pi.y
+		local v=p[i].out
+		local y=v.y
 		if y<miny then
 			mini,miny=i,y
 		end
@@ -310,7 +303,7 @@ function polytex(p,np,texture,color)
 	end
 
 	--data for left & right edges:
-	local lj,rj,ly,ry,lx,lu,lv,lw,ldx,ldu,ldv,ldw,rx,ru,rv,rw,rdx,rdu,rdv,rdw=mini,mini,miny,miny
+	local lj,rj,ly,ry,l,r,dl,dr=mini,mini,miny,miny,vec(0,0,0,0,0),vec(0,0,0,0,0),vec(0,0,0,0,0),vec(0,0,0,0,0)
 	if maxy>=270 then
 		maxy=270-1
 	end
@@ -320,73 +313,45 @@ function polytex(p,np,texture,color)
 	for y=flr(miny)+1,maxy do
 		--maybe update to next vert
 		while ly<y do
-			local v0=p[lj]
+			local v0=p[lj].out
 			lj=lj+1
 			if lj>np then lj=1 end
-			local v1=p[lj]
-			local p0,p1=v0,v1
-			local y0,y1=p0.y,p1.y
-			local dy=y1-y0
-			ly=flr(y1)
-			lx=p0.x
-			lw=p0.w
-			lu=p0.u*lw
-			lv=p0.v*lw
-			ldx=(p1.x-lx)/dy
-			local w1=p1.w
-			ldu=(p1.u * w1 - lu)/dy
-			ldv=(p1.v * w1 - lv)/dy
-			ldw=(w1-lw)/dy
+			local v1=p[lj].out
+			local y0,y1=v0.y,v1.y
+			ly=y1\1
+			set(l,0,get(v0,0,5))
+			set(dl,0,get(v1,0,5))
+			dl:sub(v0,true):div(y1-y0,true)
 			--sub-pixel correction
-			local cy=y-y0
-			lx+=cy*ldx
-			lu+=cy*ldu
-			lv+=cy*ldv
-			lw+=cy*ldw
+			l:add(dl * (y-y0),true)
 		end   
 		while ry<y do
-			local v0=p[rj]
+			local v0=p[rj].out
 			rj=rj-1
 			if rj<1 then rj=np end
-			local v1=p[rj]
-			local p0,p1=v0,v1
-			local y0,y1=p0.y,p1.y
-			local dy=y1-y0
-			ry=flr(y1)
-			rx=p0.x
-			rw=p0.w
-			ru=p0.u*rw 
-			rv=p0.v*rw 
-			rdx=(p1.x-rx)/dy
-			local w1=p1.w
-			rdu=(p1.u*w1 - ru)/dy
-			rdv=(p1.v*w1 - rv)/dy
-			rdw=(w1-rw)/dy
+			local v1=p[rj].out
+			local y0,y1=v0.y,v1.y
+			ry=y1\1
+			set(r,0,get(v0,0,5))
+			set(dr,0,get(v1,0,5))
+			dr:sub(v0,true):div(y1-y0,true)
 			--sub-pixel correction
-			local cy=y-y0
-			rx+=cy*rdx
-			ru+=cy*rdu
-			rv+=cy*rdv
-			rw+=cy*rdw
+			r:add(dr * (y-y0),true)
 		end
-		 
+		
+		local lx,_,lw,lu,lv=get(l,0,5)
+		local rx,_,rw,ru,rv=get(r,0,5)
 	  tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
 	
-		lx+=ldx
-		lu+=ldu
-		lv+=ldv
-		lw+=ldw
-		rx+=rdx
-		ru+=rdu
-		rv+=rdv
-		rw+=rdw
-    end
+		l:add(dl,true)
+		r:add(dr,true)
+  end
 end
 
 function polyline(p,np,c)
- local p0=p[np]
+ local p0=p[np].out
  for i=1,np do
-		local p1=p[i]
+		local p1=p[i].out
 		line(p0.x,p0.y,p1.x,p1.y,c)
 		p0=p1
  end
