@@ -197,7 +197,7 @@ function draw_model(model,m_obj,cam)
 				if(a.z>1) code=0
 				local w=cam.focal/a.z
 				-- attach u/v coords to output
-				verts[k]={v=a,out=vec(480/2+w*a.x,270/2-w*a.y,w,face.uv[2*k-1]*8*w,face.uv[2*k]*8*w)}	
+				verts[k]=vec(480/2+w*a.x,270/2-w*a.y,a.z,w,face.uv[2*k-1]*8*w,face.uv[2*k]*8*w)
 				outcode&=code
 				nearclip+=code&2
 			end
@@ -206,16 +206,16 @@ function draw_model(model,m_obj,cam)
 				if nearclip!=0 then                
 					-- near clipping required?
 					local w,res,v0=cam.focal,{},verts[#verts]
-					local d0=v0.v.z-1
+					local d0=v0.z-1
 					for i,v1 in ipairs(verts) do
 						local side=d0>0
 						if(side) add(res,v0)
-						local d1=v1.v.z-1
+						local d1=v1.z-1
 						if (d1>0)!=side then
 							-- clip!
 							-- project
 							-- z is clipped to near plane
-							add(res,{out=lerp(v0.out,v1.out,d0/(d0-d1))})
+							add(res,lerp(v0,v1,d0/(d0-d1)))
 						end
 						v0,d0=v1,d1
 					end
@@ -292,8 +292,7 @@ function polytex(p,np,texture,color)
 	local miny,maxy,mini=32000,-32000
 	-- find extent
 	for i=1,np do
-		local v=p[i].out
-		local y=v.y
+		local y=p[i].y
 		if y<miny then
 			mini,miny=i,y
 		end
@@ -303,7 +302,7 @@ function polytex(p,np,texture,color)
 	end
 
 	--data for left & right edges:
-	local lj,rj,ly,ry,l,r,dl,dr=mini,mini,miny,miny,vec(0,0,0,0,0),vec(0,0,0,0,0),vec(0,0,0,0,0),vec(0,0,0,0,0)
+	local lj,rj,ly,ry,l,r,dl,dr=mini,mini,miny,miny,vec(0,0,0,0,0,0),vec(0,0,0,0,0,0),vec(0,0,0,0,0,0),vec(0,0,0,0,0,0)
 	if maxy>=270 then
 		maxy=270-1
 	end
@@ -313,34 +312,34 @@ function polytex(p,np,texture,color)
 	for y=flr(miny)+1,maxy do
 		--maybe update to next vert
 		while ly<y do
-			local v0=p[lj].out
+			local v0=p[lj]
 			lj=lj+1
 			if lj>np then lj=1 end
-			local v1=p[lj].out
+			local v1=p[lj]
 			local y0,y1=v0.y,v1.y
 			ly=y1\1
-			set(l,0,get(v0,0,5))
-			set(dl,0,get(v1,0,5))
+			set(l,0,get(v0,0,6))
+			set(dl,0,get(v1,0,6))
 			dl:sub(v0,true):div(y1-y0,true)
 			--sub-pixel correction
 			l:add(dl * (y-y0),true)
 		end   
 		while ry<y do
-			local v0=p[rj].out
+			local v0=p[rj]
 			rj=rj-1
 			if rj<1 then rj=np end
-			local v1=p[rj].out
+			local v1=p[rj]
 			local y0,y1=v0.y,v1.y
 			ry=y1\1
-			set(r,0,get(v0,0,5))
-			set(dr,0,get(v1,0,5))
+			set(r,0,get(v0,0,6))
+			set(dr,0,get(v1,0,6))
 			dr:sub(v0,true):div(y1-y0,true)
 			--sub-pixel correction
 			r:add(dr * (y-y0),true)
 		end
 		
-		local lx,_,lw,lu,lv=get(l,0,5)
-		local rx,_,rw,ru,rv=get(r,0,5)
+		local lx,_,_,lw,lu,lv=get(l,0,6)
+		local rx,_,_,rw,ru,rv=get(r,0,6)
 	  tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
 	
 		l:add(dl,true)
@@ -349,9 +348,9 @@ function polytex(p,np,texture,color)
 end
 
 function polyline(p,np,c)
- local p0=p[np].out
+ local p0=p[np]
  for i=1,np do
-		local p1=p[i].out
+		local p1=p[i]
 		line(p0.x,p0.y,p1.x,p1.y,c)
 		p0=p1
  end
