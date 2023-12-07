@@ -126,13 +126,19 @@ local cube_model=prepare_model({
 		}
 	})
 
+
+local conf={
+	fov=110
+}
+local fov = cos(conf.fov/360/2)
+local h_ratio,v_ratio=(480-480/2)/270/fov,(270-270/2)/270/fov
+
 function make_cam(x0,y0,focal)
-	local yangle,zangle=0,0
+	local yangle,zangle=0,0.25
 	local dyangle,dzangle=0,0
 
 	return {
 		pos=vec(0,0,0),
-		focal=focal,
 		control=function(self,dist)
 			if btn(0) then dyangle+=1 end
 			if btn(1) then dyangle+=-1 end
@@ -163,8 +169,8 @@ function make_cam(x0,y0,focal)
 			  local vert=verts[i]
 				local v=vert.pos
 				local x,y,z=v:get(0,3)
-				local w=focal/z
-				out[i]={x=x0+x*w,y=y0-y*w,w=w,u=vert.u,v=vert.v}
+				local w=fov/z
+				out[i]={x=x0+270*x*w,y=y0-270*y*w,w=w,u=vert.u,v=vert.v}
 			end
 			return out
 		end
@@ -195,9 +201,9 @@ function draw_model(model,m_obj,cam)
 				local code,a=2,v:matmul3d(m)
 				avg:add(a,true)
 				if(a.z>1) code=0
-				local w=cam.focal/a.z
+				local w=fov/a.z
 				-- attach u/v coords to output
-				verts[k]=vec(480/2+w*a.x,270/2-w*a.y,a.z,w,face.uv[2*k-1]*8*w,face.uv[2*k]*8*w)
+				verts[k]=vec(480/2+270*w*a.x,270/2-270*w*a.y,a.z,w,face.uv[2*k-1]*16*w,face.uv[2*k]*16*w)
 				outcode&=code
 				nearclip+=code&2
 			end
@@ -222,7 +228,7 @@ function draw_model(model,m_obj,cam)
 					verts=res
 				end			
 				polytex(verts,#verts,ss,i)
-				polyline(verts,#verts,7)
+				--polyline(verts,#verts,7)
 
 				-- debug: draw normals
 				--avg/=4
@@ -285,6 +291,8 @@ function _draw()
 	end
 	print(s,2,2,7)
 	_t = t1
+
+	endFrame()
 end
 
 -->8 {}
@@ -340,8 +348,23 @@ function polytex(p,np,texture,color)
 		
 		local lx,_,_,lw,lu,lv=get(l,0,6)
 		local rx,_,_,rw,ru,rv=get(r,0,6)
-	  tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
-	
+		if lx<0 then
+			local dx=rx-lx
+			lu-=lx*(ru-lu)/dx
+			lv-=lx*(rv-lv)/dx
+			lw-=lx*(rw-lw)/dx
+			lx=0
+		end
+		
+		--tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
+		local dx=rx-lx
+		spanfill(lx,rx,y,lu,lv,lw,(ru-lu)/dx,(rv-lv)/dx,(rw-lw)/dx,function(x0,y,x1,y,u,v,w,du,dv,dw)
+			local dx=x1-x0
+			tline3d(texture,x0,y,x1,y,u,v,u+dx*du,v+dx*dv,w,w+dx*dw)
+			--rectfill(x0,y,x1,y,(color%64)+1)
+			--flip()
+		end)
+			
 		l:add(dl,true)
 		r:add(dr,true)
   end
@@ -354,4 +377,208 @@ function polyline(p,np,c)
 		line(p0.x,p0.y,p1.x,p1.y,c)
 		p0=p1
  end
+end
+
+-- basic pool
+local PoolCls=function(name,stride,size)
+	local cursor,total=0,size*stride
+	local pool=userdata("f64",total)
+	return setmetatable({
+			-- reserve an entry in pool
+			pop=function(self,...)
+					-- init values
+					local idx=cursor
+					cursor = cursor + stride
+					if cursor>=total then
+							assert(false,"Pool: "..name.." full: "..cursor.."/"..total)
+					end
+					local n=select("#",...)
+					for i=0,n-1 do
+							pool[idx+i]=select(i+1,...)
+					end
+					return idx
+			end,
+			pop5=function(self,a,b,c,d,e)
+					-- init values
+					local idx=cursor
+					cursor += stride
+					if cursor>=total then
+							assert(false,"Pool: "..name.." full: "..cursor.."/"..total)
+					end
+					set(pool,idx,a,b,c,d,e)
+					return idx
+			end,
+			-- reclaim everything
+			reset=function(self)
+					cursor = 0
+			end,
+			stats=function(self)   
+					return "pool:"..name.." free: "..((total-cursor)/stride).." size: "..(total/stride)
+			end
+	},{
+			-- redirect get/set to underlying array
+			__index = function(self,k)
+					return get(pool,k)
+			end,
+			__newindex = function(self, key, value)
+					set(pool,key,value)
+			end
+	})
+end
+
+
+-- span buffer
+local _pool=PoolCls("spans",5,25000)
+local _spans={}
+function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)	
+	if x1<0 or x0>480 or x1-x0<0 then
+		return
+	end
+	local _pool,_ptr=_pool,_pool
+
+	-- fn = overdrawfill
+
+	local span,old=_spans[y]
+	-- empty scanline?
+	if not span then
+		fn(x0,y,x1,y,u,v,w,du,dv,dw)
+		_spans[y]=_pool:pop5(x0,x1,w,dw,-1)
+		return
+	end
+
+	-- loop while valid address
+	while span>=0 do		
+		local s0,s1=_ptr[span],_ptr[span+1]
+
+		if s0>x0 then
+			if s0>x1 then
+				-- nnnn
+				--       xxxxxx	
+				-- fully visible
+				fn(x0,y,x1,y,u,v,w,du,dv,dw)
+				local n=_pool:pop5(x0,x1,w,dw,span)
+				if old then
+					-- chain to previous
+					_ptr[old+4]=n
+				else
+					-- new first
+					_spans[y]=n
+				end
+				return
+			end
+
+			-- nnnn?????????
+			--     xxxxxxx
+			-- clip + display left
+			local x2=s0-1
+			local dx=x2-x0
+			fn(x0,y,x2,y,u,v,w,du,dv,dw)
+			local n=_pool:pop5(x0,x2,w,dw,span)
+			if old then 
+				_ptr[old+4]=n				
+			else
+				_spans[y]=n
+			end
+			old=n
+
+			x0=s0
+			--assert(x1-x0>=0,"empty right seg")
+			u+=dx*du
+			v+=dx*dv
+			w+=dx*dw
+			-- check remaining segment
+			goto continue
+		elseif s1>=x0 then
+			--     ??nnnn????
+			--     xxxxxxx	
+
+			--     ??nnnn?
+			--     xxxxxxx	
+			-- totally hidden (or not!)
+			local dx,sdw=x0-s0,_ptr[span+3]
+			local sw=_ptr[span+2]+dx*sdw		
+			
+			-- use scaled precision for abutting spans (see Christer Ericson)
+			-- use absolute distance for other planes
+			if sw-w<-0.00001 or (abs(sw-w)<=1e-5*max(abs(sw),max(abs(w),1)) and dw>sdw) then
+				--printh(sw.."("..dx..") "..w.." w:"..span.dw.."<="..dw)	
+				-- insert (left) clipped existing span as a "new" span
+				if dx>0 then
+					local n=_pool:pop5(
+						s0,
+						x0-1,
+						_ptr[span+2],
+						sdw,
+						span)
+					if old then
+						_ptr[old+4]=n
+					else
+						-- new first
+						_spans[y]=n
+					end
+					old=n
+				end
+				-- middle ("new")
+				--     ??nnnnn???
+				--     xxxxxxx			
+				-- draw only up to s1
+				local x2=s1<x1 and s1 or x1
+				fn(x0,y,x2,y,u,v,w,du,dv,dw)					
+				local n=_pool:pop5(x0,x2,w,dw,span)
+				if old then 
+					_ptr[old+4]=n	
+				else
+					-- new first
+					_spans[y]=n
+				end
+				old=n
+
+				-- any remaining "right" from current span?
+				local dx=s1-x1-1
+				if dx>0 then
+					-- "shrink" current span
+					_ptr[span]=x1+1
+					_ptr[span+2]=_ptr[span+2]+(x1+1-s0)*sdw
+				else
+					-- drop current span
+					_ptr[old+4]=_ptr[span+4]
+					span=old
+				end					
+			end
+
+			if s1>=x1 then
+				--     ///////
+				--     xxxxxxx	
+				return
+			end
+			--         ///nnn
+			--     xxxxxxx
+			-- clip incomping segment
+			--assert(dx>=0,"empty right (incoming) seg")
+			-- 
+			local dx=s1+1-x0
+			x0=s1+1
+			u+=dx*du
+			v+=dx*dv
+			w+=dx*dw
+
+			--            nnnn
+			--     xxxxxxx	
+			-- continue + test against other spans
+		end
+		old=span	
+		span=_pool[span+4]
+::continue::
+	end
+	-- new last?
+	if x1-x0>=0 then
+		fn(x0,y,x1,y,u,v,w,du,dv,dw)
+		-- end of spans		
+		_ptr[old+4]=_pool:pop5(x0,x1,w,dw,-1)
+	end
+end
+
+function endFrame()
+	_pool:reset()
+	_spans={}
 end
