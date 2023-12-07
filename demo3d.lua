@@ -171,13 +171,13 @@ function make_cam(x0,y0,focal)
 	}
 end
 
+local _m_inv=userdata("f64",3,4)
 function draw_model(model,m_obj,cam)
 	-- cam pos in object space
-	local m_inv=userdata("f64",3,4)
-	set(m_inv,0,0,get(m_obj,0,0,9))
-	m_transpose(m_inv)
+	set(_m_inv,0,0,get(m_obj,0,0,9))
+	m_transpose(_m_inv)
 	--m_obj:transpose(m_inv)
-	local cam_pos=cam.pos:matmul3d(m_translate(vec(-m_obj[9],-m_obj[10],-m_obj[11])):matmul3d(m_inv))
+	local cam_pos=cam.pos:matmul3d(m_translate(vec(-m_obj[9],-m_obj[10],-m_obj[11])):matmul3d(_m_inv))
 	
 	-- object to world
 	-- world to cam
