@@ -3,6 +3,7 @@
 
 -- globals
 local cam
+local _textures={}
 
 -- helper functions
 function lerp(a,b,t)
@@ -178,7 +179,7 @@ function make_cam(x0,y0,focal)
 end
 
 local _m_inv=userdata("f64",3,4)
-function draw_model(model,m_obj,cam)
+function draw_model(model,m_obj,cam,id)
 	-- cam pos in object space
 	set(_m_inv,0,0,get(m_obj,0,0,9))
 	m_transpose(_m_inv)
@@ -227,7 +228,7 @@ function draw_model(model,m_obj,cam)
 					end
 					verts=res
 				end			
-				polytex(verts,#verts,ss,i)
+				polytex(verts,#verts,_textures[id%16],i)
 				--polyline(verts,#verts,7)
 
 				-- debug: draw normals
@@ -247,16 +248,19 @@ function _init()
 	cam=make_cam(480/2,270/2,480/2)
 	
 	-- create a texture bitmap and draw something on it
-	ss = userdata("u8",32,32)
-	for i=0,32*32-1 do
-		local x,y=i%32,flr(i/32)
-		local c=7
-		if (x<16 and y<16) or (x>=16 and y>=16) then
-			c=8
+	for k=0,15 do
+		local ss = userdata("u8",32,32)
+		for i=0,32*32-1 do
+			local x,y=i%32,flr(i/32)
+			local c=k
+			if (x<16 and y<16) or (x>=16 and y>=16) then
+				c=k+1
+			end
+			set(ss,x,y,c)
 		end
-		set(ss,x,y,c)
+		_textures[k]=ss
 	end
-	
+
 	-- set_draw_target(ss)
 	-- circ(16,16,4,7)
 	set_draw_target()
@@ -274,8 +278,8 @@ function _draw()
 	local r={"x","y","z"}
 	for i=-2,3 do
 		for j=-2,3 do			
-			local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation(rnd(r),(time()+i*j)/16)):matmul3d(m_translate(vec(2*i,2*j,0)))
-			draw_model(cube_model,m,cam)
+			local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation(rnd(r),(0.125*i*j))):matmul3d(m_translate(vec(2*i,2*j,0)))
+			draw_model(cube_model,m,cam,(i+5*j))
 		end
 	end
 
@@ -291,8 +295,6 @@ function _draw()
 	end
 	print(s,2,2,7)
 	_t = t1
-
-	endFrame()
 end
 
 -->8 {}
@@ -348,23 +350,27 @@ function polytex(p,np,texture,color)
 		
 		local lx,_,_,lw,lu,lv=get(l,0,6)
 		local rx,_,_,rw,ru,rv=get(r,0,6)
-		if lx<0 then
+		if rx>=0 and lx<480 then
 			local dx=rx-lx
-			lu-=lx*(ru-lu)/dx
-			lv-=lx*(rv-lv)/dx
-			lw-=lx*(rw-lw)/dx
-			lx=0
+			local du,dv,dw=(ru-lu)/dx,(rv-lv)/dx,(rw-lw)/dx
+			if lx<0 then
+				lu-=lx*du
+				lv-=lx*dv
+				lw-=lx*dw
+				lx=0
+			end
+			-- sub-pixel correction
+			local sx=1-lx%1
+			lu+=sx*du
+			lv+=sx*dv
+			lw+=sx*dw
+			--tline3d(texture,lx\1,y,rx,y,lu,lv,ru,rv,lw,rw)
+			spanfill(lx\1,rx\1-1,y,lu,lv,lw,ru,rv,rw,function(...)
+			 tline3d(...)
+			 if(btn(4)) flip()
+			end,texture)
 		end
-		
-		--tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
-		local dx=rx-lx
-		spanfill(lx,rx,y,lu,lv,lw,(ru-lu)/dx,(rv-lv)/dx,(rw-lw)/dx,function(x0,y,x1,y,u,v,w,du,dv,dw)
-			local dx=x1-x0
-			tline3d(texture,x0,y,x1,y,u,v,u+dx*du,v+dx*dv,w,w+dx*dw)
-			--rectfill(x0,y,x1,y,(color%64)+1)
-			--flip()
-		end)
-			
+
 		l:add(dl,true)
 		r:add(dr,true)
   end
@@ -388,26 +394,15 @@ local PoolCls=function(name,stride,size)
 			pop=function(self,...)
 					-- init values
 					local idx=cursor
-					cursor = cursor + stride
-					if cursor>=total then
-							assert(false,"Pool: "..name.." full: "..cursor.."/"..total)
-					end
-					local n=select("#",...)
-					for i=0,n-1 do
-							pool[idx+i]=select(i+1,...)
-					end
-					return idx
-			end,
-			pop5=function(self,a,b,c,d,e)
-					-- init values
-					local idx=cursor
 					cursor += stride
 					if cursor>=total then
 							assert(false,"Pool: "..name.." full: "..cursor.."/"..total)
 					end
-					set(pool,idx,a,b,c,d,e)
+					set(pool,idx,...)
 					return idx
 			end,
+			-- returns the underlying userdata array
+			ptr=function() return pool end,
 			-- reclaim everything
 			reset=function(self)
 					cursor = 0
@@ -415,7 +410,7 @@ local PoolCls=function(name,stride,size)
 			stats=function(self)   
 					return "pool:"..name.." free: "..((total-cursor)/stride).." size: "..(total/stride)
 			end
-	},{
+		},{
 			-- redirect get/set to underlying array
 			__index = function(self,k)
 					return get(pool,k)
@@ -430,36 +425,37 @@ end
 -- span buffer
 local _pool=PoolCls("spans",5,25000)
 local _spans={}
-function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)	
+function spanfill(x0,x1,y,u0,v0,w0,u1,v1,w1,fn,texture)	
 	if x1<0 or x0>480 or x1-x0<0 then
 		return
 	end
-	local _pool,_ptr=_pool,_pool
-
+	local _spans,span,_pool,_ptr,old=_spans,_spans[y],_pool,_pool:ptr()
 	-- fn = overdrawfill
 
-	local span,old=_spans[y]
+	local dx=x1-x0
+	local du,dv,dw=(u1-u0)/dx,(v1-v0)/dx,(w1-w0)/dx
+	local au,av,aw=u0-x0*du,v0-x0*dv,w0-x0*dw
 	-- empty scanline?
 	if not span then
-		fn(x0,y,x1,y,u,v,w,du,dv,dw)
-		_spans[y]=_pool:pop5(x0,x1,w,dw,-1)
+		fn(texture,x0,y,x1,y,u0,v0,u1,v1,w0,w1)
+		_spans[y]=_pool:pop(x0,x1,w0,dw,-1)
 		return
 	end
 
 	-- loop while valid address
 	while span>=0 do		
-		local s0,s1=_ptr[span],_ptr[span+1]
+		local s0,s1=get(_ptr,span,2)
 
 		if s0>x0 then
 			if s0>x1 then
 				-- nnnn
 				--       xxxxxx	
 				-- fully visible
-				fn(x0,y,x1,y,u,v,w,du,dv,dw)
-				local n=_pool:pop5(x0,x1,w,dw,span)
+				fn(texture,x0,y,x1,y,u0,v0,u1,v1,w0,w1)
+				local n=_pool:pop(x0,x1,w0,dw,span)
 				if old then
 					-- chain to previous
-					_ptr[old+4]=n
+					set(_ptr,old+4,n)
 				else
 					-- new first
 					_spans[y]=n
@@ -472,10 +468,10 @@ function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)
 			-- clip + display left
 			local x2=s0-1
 			local dx=x2-x0
-			fn(x0,y,x2,y,u,v,w,du,dv,dw)
-			local n=_pool:pop5(x0,x2,w,dw,span)
+			fn(texture,x0,y,x2,y,u0,v0,au+x2*du,av+x2*dv,w0,aw+x2*dw)
+			local n=_pool:pop(x0,x2,w0,dw,span)
 			if old then 
-				_ptr[old+4]=n				
+				set(_ptr,old+4,n)
 			else
 				_spans[y]=n
 			end
@@ -483,9 +479,9 @@ function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)
 
 			x0=s0
 			--assert(x1-x0>=0,"empty right seg")
-			u+=dx*du
-			v+=dx*dv
-			w+=dx*dw
+			u0+=dx*du
+			v0+=dx*dv
+			w0+=dx*dw
 			-- check remaining segment
 			goto continue
 		elseif s1>=x0 then
@@ -495,23 +491,23 @@ function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)
 			--     ??nnnn?
 			--     xxxxxxx	
 			-- totally hidden (or not!)
-			local dx,sdw=x0-s0,_ptr[span+3]
-			local sw=_ptr[span+2]+dx*sdw		
+			local dx,sdw=x0-s0,get(_ptr,span+3)
+			local sw=get(_ptr,span+2)+dx*sdw		
 			
 			-- use scaled precision for abutting spans (see Christer Ericson)
 			-- use absolute distance for other planes
-			if sw-w<-0.00001 or (abs(sw-w)<=1e-5*max(abs(sw),max(abs(w),1)) and dw>sdw) then
+			if sw-w0<-0.00001 or (abs(sw-w0)<=1e-5*max(abs(sw),max(abs(w0),1)) and dw>sdw) then
 				--printh(sw.."("..dx..") "..w.." w:"..span.dw.."<="..dw)	
 				-- insert (left) clipped existing span as a "new" span
 				if dx>0 then
-					local n=_pool:pop5(
+					local n=_pool:pop(
 						s0,
 						x0-1,
-						_ptr[span+2],
+						get(_ptr,span+2),
 						sdw,
 						span)
 					if old then
-						_ptr[old+4]=n
+						set(_ptr,old+4,n)
 					else
 						-- new first
 						_spans[y]=n
@@ -523,10 +519,10 @@ function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)
 				--     xxxxxxx			
 				-- draw only up to s1
 				local x2=s1<x1 and s1 or x1
-				fn(x0,y,x2,y,u,v,w,du,dv,dw)					
-				local n=_pool:pop5(x0,x2,w,dw,span)
+				fn(texture,x0,y,x2,y,u0,v0,au+x2*du,av+x2*dv,w0,aw+x2*dw)					
+				local n=_pool:pop(x0,x2,w0,dw,span)
 				if old then 
-					_ptr[old+4]=n	
+					set(_ptr,old+4,n)
 				else
 					-- new first
 					_spans[y]=n
@@ -537,11 +533,11 @@ function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)
 				local dx=s1-x1-1
 				if dx>0 then
 					-- "shrink" current span
-					_ptr[span]=x1+1
-					_ptr[span+2]=_ptr[span+2]+(x1+1-s0)*sdw
+					set(_ptr,span,x1+1)
+					set(_ptr,span+2,get(_ptr,span+2)+(x1+1-s0)*sdw)
 				else
 					-- drop current span
-					_ptr[old+4]=_ptr[span+4]
+					set(_ptr,old+4,get(_ptr,span+4))
 					span=old
 				end					
 			end
@@ -558,27 +554,31 @@ function spanfill(x0,x1,y,u,v,w,du,dv,dw,fn)
 			-- 
 			local dx=s1+1-x0
 			x0=s1+1
-			u+=dx*du
-			v+=dx*dv
-			w+=dx*dw
+			u0+=dx*du
+			v0+=dx*dv
+			w0+=dx*dw
 
 			--            nnnn
 			--     xxxxxxx	
 			-- continue + test against other spans
 		end
 		old=span	
-		span=_pool[span+4]
+		span=get(_ptr,span+4)
 ::continue::
 	end
 	-- new last?
 	if x1-x0>=0 then
-		fn(x0,y,x1,y,u,v,w,du,dv,dw)
+		fn(texture,x0,y,x1,y,u0,v0,u1,v1,w0,w1)
 		-- end of spans		
-		_ptr[old+4]=_pool:pop5(x0,x1,w,dw,-1)
+		set(_ptr,old+4,_pool:pop(x0,x1,w0,dw,-1))
 	end
 end
 
-function endFrame()
+local draw=_draw
+function _draw()
+	draw()
+	print(_pool:stats(),2,36,7)
+
 	_pool:reset()
 	_spans={}
 end
