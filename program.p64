@@ -1,0 +1,933 @@
+picotron cartridge // www.picotron.net
+version 2
+
+:: gfx/
+:: gfx/0.gfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTE1IDE5OjQyOjI5Iixtb2RpZmllZD0iMjAyNC0w
+My0xNiAxODo0NDozOSIscmV2aXNpb249MTYwXV1sejQA3QEAAJoyAADzOHtbMF09e2JtcD1weHUA
+QyAQEAQ3DxZXDncOVw5nDg8VVwUORw4NdwUOFx4NJz8PJwUeRww-GAyHDAsoGwx3DCgHCAsMdwxI
+BQDhhwwoCwxHHg0nPCcFHhc4AIJHDg1XBQ5nDlMA8wA3LGZsYWdzPTAscGFuX3gIAMp5PTAsem9v
+bT02fSyMAPMU-yACFQ8VdQ4vIAWwDh0FAJEADh0FAZ0BBR0FsAUdDgCRAAUQABsOEAALMABfLb8W
+-QJ9ABzwAR8b3xMPG08TGx8bXxMPGz8JAP84bxMPGyMPEwtOCz4PGw4zCx4rE04jPg0jPhNeI14D
+XgOuDa4dHgNeEz4NDhNeAw0uE24dCw0uGwM_Ex0bLgsDjgv_CysOCx6KAByfAt0CHb8SLd4dAgAC
+Xy2_HQLd3QAd-wH-ECMnHjduJx43fhceBx4HBgAFQG43DjcEAH-_ByEeMf4UZgAc-zEPFDQ_tD6E
+Hx8ULiQNNC1eFB1UXlSeBO4UXiReFE5kLgQudH5EDQROHR5EDV4dFB5kPg0ULjQeZD4kPkReBD5E
+bwAcL-DwMQD--------------------------------------------------------------_FQ
+bT02fX0=
+:: gfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTE1IDE5OjQyOjI5IixzdG9yZWQ9IjIwMjQtMDMt
+MTUgMTk6NDI6MjkiXV1sejQABAAAAAMAAAAwbmls
+:: main.lua
+--[[pod_format="raw",created="2024-03-15 19:42:29",modified="2024-03-16 18:44:39",revision=251]]
+-- textured 3d demo
+-- by freds72
+
+-- globals
+local cam
+local _textures={}
+
+-- helper functions
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+
+-- vector helpers
+function v_normz(v)
+	local d=v:magnitude()
+	if d>0 then
+		return vec(v.x/d,v.y/d,v.z/d)
+	end
+	return vec(0,0,0)
+end
+
+function m_print(m,xx,yy,c)
+	for j=0,3 do
+	 local x,y,z=m:get(0,j,3)
+	 print(string.format("%.3f\t%.3f\t%.3f",x,y,z),xx,yy,c)
+	 yy+=8
+	end
+end
+
+function v_print(v,xx,yy,c)
+ local x,y,z=v:get(0,4)
+ print(string.format("%.3f\t%.3f\t%.3f",x,y,z),xx,yy,c)  
+end
+
+function make_m()
+	local m = userdata("f64",3,4)
+	set(m, 0, 0,
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1,
+		0, 0, 0)
+	return m
+end
+
+function m_transpose(m)
+	m[1],m[3]=m[3],m[1]
+	m[2],m[6]=m[6],m[2]
+	m[5],m[7]=m[7],m[5]
+end
+
+function m_translate(v)
+	local m = userdata("f64",3,4)
+	local x,y,z=v:get(0,3)
+	set(m, 0, 0,
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1,
+		x, y, z)
+	return m
+end
+
+function m_rotation(axis,angle)
+	local c,s=cos(angle),-sin(angle)
+	local m = userdata("f64",3,4)
+	if axis=="x" then
+		set(m, 0, 0,
+			1, 0,  0,  
+			0, c, -s,
+			0, s,  c, 
+			0, 0,  0)		
+	elseif axis=="y" then
+		set(m, 0, 0,
+			c,  0, s, 
+			0,  1, 0, 
+			-s, 0, c,
+			0, 0, 0)
+	else
+		set(m,   0, 0,
+			c, -s, 0,
+			s, c,  0,
+			0, 0,  1,
+			0, 0,  0)		
+	end
+	return m
+end
+
+function m_fwd(m)
+	return vec(m[2],m[6],m[10],0)
+end
+
+function prepare_model(model)
+	for _,f in pairs(model.f) do
+		-- de-reference vertex indices
+		for i=1,4 do
+			f[i]=model.v[f[i]]
+		end
+
+		-- normal
+		f.n=v_normz((f[4]-f[1]):cross(f[2]-f[1]))
+		-- fast viz check
+		f.cp=f.n:dot(f[1])
+	end
+	return model
+end
+
+-- models
+local cube_model=prepare_model({
+		v={
+			vec(0,0,0),
+			vec(1,0,0),
+			vec(1,0,1),
+			vec(0,0,1),
+			vec(0,1,0),
+			vec(1,1,0),
+			vec(1,1,1),
+			vec(0,1,1),
+		},
+		-- faces + vertex uv's
+		-- NOTE: must use <4 to avoid texture spilling
+		f={
+			{1,4,3,2,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{1,2,6,5,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{2,3,7,6,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{3,4,8,7,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{4,1,5,8,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+			{5,6,7,8,uv={0,0,3.99,0,3.99,3.99,0,3.99}},
+		}
+	})
+
+
+local conf={
+	fov=110
+}
+local fov = cos(conf.fov/360/2)
+local h_ratio,v_ratio=(480-480/2)/270/fov,(270-270/2)/270/fov
+
+function make_cam(x0,y0,focal)
+	local yangle,zangle=0,0.25
+	local dyangle,dzangle=0,0
+
+	return {
+		pos=vec(0,0,0),
+		control=function(self,dist)
+			if btn(0) then dyangle+=1 end
+			if btn(1) then dyangle+=-1 end
+			if btn(2) then dzangle+=1 end
+			if btn(3) then dzangle+=-1 end
+			yangle+=dyangle/256--+0.01
+			zangle+=dzangle/256--+0.005
+			-- friction
+			dyangle*=0.8
+			dzangle*=0.8
+			
+			local m=m_rotation("x",zangle):matmul3d(m_rotation("z",yangle))
+			local pos=vec(0,0,-dist):matmul3d(m)
+
+			-- inverse view matrix
+			--m:transpose(m)
+			m[1],m[3]=m[3],m[1]
+			m[2],m[6]=m[6],m[2]
+			m[5],m[7]=m[7],m[5]
+
+			self.m=m_translate(pos*-1):matmul3d(m)
+			self.pos=pos			
+		end,
+		project=function(self,verts)
+			local out={}
+			--for i,vert in pairs(verts) do
+			for i=1,#verts do
+			  local vert=verts[i]
+				local v=vert.pos
+				local x,y,z=v:get(0,3)
+				local w=fov/z
+				out[i]={x=x0+270*x*w,y=y0-270*y*w,w=w,u=vert.u,v=vert.v}
+			end
+			return out
+		end
+	}
+end
+
+local _m_inv=userdata("f64",3,4)
+function draw_model(model,m_obj,cam,id)
+	-- cam pos in object space
+	set(_m_inv,0,0,get(m_obj,0,0,9))
+	m_transpose(_m_inv)
+	--m_obj:transpose(m_inv)
+	local cam_pos=cam.pos:matmul3d(m_translate(vec(-m_obj[9],-m_obj[10],-m_obj[11])):matmul3d(_m_inv))
+	
+	-- object to world
+	-- world to cam
+	local m=m_obj:matmul3d(cam.m)
+	local m_n=make_m()
+	set(m_n,0,0,get(m,0,0,9))
+
+   local cache,verts={},{}
+   for i,face in pairs(model.f) do
+		-- is face visible?
+		if face.n:dot(cam_pos)>face.cp then
+			local outcode,nearclip=0xffffffff,0
+			for k,v in ipairs(face) do
+				local a=cache[k]
+				if not a then
+					-- transform to cam
+					local code=2
+					a=v:matmul3d(m)
+					if(a.z>1) code=0
+					local w=fov/a.z
+					-- attach u/v coords to output
+					a=vec(480/2+270*w*a.x,270/2-270*w*a.y,a.z,w,0,0,code)
+					cache[v]=a
+				end
+				verts[k]=a
+				local w=a:get(3)
+				a:set(4,face.uv[2*k-1]*16*w,face.uv[2*k]*16*w)
+				local code=a:get(6)
+				outcode&=code
+				nearclip+=code&2
+			end
+			-- out of screen?
+			if outcode==0 then
+				if nearclip!=0 then                
+					-- near clipping required?
+					local w,res,v0=cam.focal,{},verts[#verts]
+					local d0=v0.z-1
+					for i,v1 in ipairs(verts) do
+						local side=d0>0
+						if(side) add(res,v0)
+						local d1=v1.z-1
+						if (d1>0)!=side then
+							-- clip!
+							-- project
+							-- z is clipped to near plane
+							add(res,lerp(v0,v1,d0/(d0-d1)))
+						end
+						v0,d0=v1,d1
+					end
+					verts=res
+				end			
+				polytex(verts,#verts,_textures[id%16],i)
+				--polyline(verts,#verts,7)
+
+				-- debug: draw normals
+				--avg/=4
+				--local tmp=cam:project({{pos=avg},{pos=avg+(face.n*0.25):matmul3d(m_n)}})
+				--line(tmp[1].x,tmp[1].y,tmp[2].x,tmp[2].y,8)
+			end
+		end
+	end
+	--v_print(cam_pos,0,64,7)
+	--m_print(m_inv,0,96,7)
+	   
+  --line(480/2,270/2,480/2+64*cam.pos.x,270/2-64*cam.pos.z,7)
+end
+
+local dat, meta = fetch("colormap.lmp")
+function _init()
+   
+	cam=make_cam(480/2,270/2,480/2)
+	
+	-- create a texture bitmap and draw something on it
+	for k=0,15 do
+		local ss = userdata("u8",32,32)
+		for i=0,32*32-1 do
+			local x,y=i%32,flr(i/32)
+			local c=k
+			if (x<16 and y<16) or (x>=16 and y>=16) then
+				c=k+1
+			end
+			set(ss,x,y,c)
+		end
+		set_draw_target(ss)
+		sspr(k,0,0,16,16,0,0,32,32)		
+		_textures[k]=ss
+	end
+	-- set_draw_target(ss)
+	-- circ(16,16,4,7)
+	set_draw_target()
+end
+
+function _update()
+	cam:control(4.5)
+end
+
+local _t=time()
+function _draw()
+	cls()
+
+   srand(42)
+	local r={"x","y","z"}
+	local t=time()/8
+	for i=-2,3 do
+		for j=-2,3 do			
+			local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation(rnd(r),t*(0.125+i+j))):matmul3d(m_translate(vec(2*i,2*j,0)))
+			draw_model(cube_model,m,cam,(i+5*j))
+		end
+	end
+
+	--local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation("y",time()/16)):matmul3d(m_translate(vec(2.5,0,0)))
+	--draw_model(cube_model,m,cam)
+	
+	local t1=time()
+	local s=string.format("tline3d DEMO\nfps: %.i\ncpu: %.3f",flr(1/(t1-_t)),100*stat(1))
+	for i=-1,1 do
+		for j=-1,1 do
+			print(s,2+i,2+j,0)
+		end
+	end
+	print(s,2,2,7)
+	_t = t1
+end
+
+-->8 {}
+function polytex(p,np,texture,color)
+	local miny,maxy,mini=32000,-32000
+	-- find extent
+	for i=1,np do
+		local pi=p[i]
+		local y=pi.y
+		if y<miny then
+			mini,miny=i,y
+		end
+		if y>maxy then
+			maxy=y
+		end
+	end
+
+	--data for left & right edges:
+	local lj,rj,ly,ry,lr,dlr=mini,mini,miny,miny,userdata("f64",12),userdata("f64",12)
+	if maxy>=270 then
+		maxy=270-1
+	end
+	if miny<0 then
+		miny=-1
+	end
+	for y=miny\1+1,maxy do
+		--maybe update to next vert
+		while ly<y do
+			local v0=p[lj]
+			lj=lj+1
+			if lj>np then lj=1 end
+			local v1=p[lj]
+			local p0,p1=v0,v1
+			local y0,y1=p0.y,p1.y
+			local dy=y1-y0
+			ly=y1\1
+			local lx,lu,lv,lw=p0.x,p0.u,p0.v,p0.w
+			local ldx=(p1.x-lx)/dy
+			local ldu=(p1.u - lu)/dy
+			local ldv=(p1.v - lv)/dy
+			local ldw=(p1.w - lw)/dy
+			--sub-pixel correction
+			local cy=y-y0
+			lx+=cy*ldx
+			lu+=cy*ldu
+			lv+=cy*ldv
+			lw+=cy*ldw
+			lr:set(0,lx,lu,lv,lw)
+			dlr:set(0,ldx,ldu,ldv,ldw)
+		end   
+		while ry<y do
+			local v0=p[rj]
+			rj=rj-1
+			if rj<1 then rj=np end
+			local v1=p[rj]
+			local p0,p1=v0,v1
+			local y0,y1=p0.y,p1.y
+			local dy=y1-y0
+			ry=y1\1
+			local rx,ru,rv,rw=p0.x,p0.u,p0.v,p0.w
+			local rdx=(p1.x-rx)/dy
+			local rdu=(p1.u - ru)/dy
+			local rdv=(p1.v - rv)/dy
+			local rdw=(p1.w - rw)/dy
+			--sub-pixel correction
+			local cy=y-y0
+			rx+=cy*rdx
+			ru+=cy*rdu
+			rv+=cy*rdv
+			rw+=cy*rdw
+			lr:set(4,rx,ru,rv,rw)
+			dlr:set(4,rdx,rdu,rdv,rdw)			
+		end
+		
+		local lx,lu,lv,lw,rx,ru,rv,rw=lr:get(0,8)
+		tline3d(texture,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
+		
+		lr:add(dlr,true)
+  end
+end
+
+function polyline(p,np,c)
+ local p0=p[np]
+ for i=1,np do
+		local p1=p[i]
+		line(p0.x,p0.y,p1.x,p1.y,c)
+		p0=p1
+ end
+end
+
+-- basic pool
+local PoolCls=function(name,stride,size)
+	local cursor,total=0,size*stride
+	local pool=userdata("f64",total)
+	return setmetatable({
+			-- reserve an entry in pool
+			pop=function(self,...)
+					-- init values
+					local idx=cursor
+					cursor += stride
+					if cursor>=total then
+							assert(false,"Pool: "..name.." full: "..cursor.."/"..total)
+					end
+					set(pool,idx,...)
+					return idx
+			end,
+			-- returns the underlying userdata array
+			ptr=function() return pool end,
+			-- reclaim everything
+			reset=function(self)
+					cursor = 0
+			end,
+			stats=function(self)   
+					return "pool:"..name.." free: "..((total-cursor)/stride).." size: "..(total/stride)
+			end
+		},{
+			-- redirect get/set to underlying array
+			__index = function(self,k)
+					return get(pool,k)
+			end,
+			__newindex = function(self, key, value)
+					set(pool,key,value)
+			end
+	})
+end
+
+
+-- span buffer
+local _pool=PoolCls("spans",5,25000)
+local _spans={}
+function spanfill(x0,x1,y,u0,v0,w0,u1,v1,w1,fn,texture)	
+	if x1<0 or x0>480 or x1-x0<0 then
+		return
+	end
+	local _spans,span,_pool,_ptr,old=_spans,_spans[y],_pool,_pool:ptr()
+	-- fn = overdrawfill
+
+	local dx=x1-x0
+	local du,dv,dw=(u1-u0)/dx,(v1-v0)/dx,(w1-w0)/dx
+	local au,av,aw=u0-x0*du,v0-x0*dv,w0-x0*dw
+	-- empty scanline?
+	if not span then
+		fn(texture,x0,y,x1,y,u0,v0,u1,v1,w0,w1)
+		_spans[y]=_pool:pop(x0,x1,w0,dw,-1)
+		return
+	end
+
+	-- loop while valid address
+	while span>=0 do		
+		local s0,s1=get(_ptr,span,2)
+
+		if s0>x0 then
+			if s0>x1 then
+				-- nnnn
+				--       xxxxxx	
+				-- fully visible
+				fn(texture,x0,y,x1,y,u0,v0,u1,v1,w0,w1)
+				local n=_pool:pop(x0,x1,w0,dw,span)
+				if old then
+					-- chain to previous
+					set(_ptr,old+4,n)
+				else
+					-- new first
+					_spans[y]=n
+				end
+				return
+			end
+
+			-- nnnn?????????
+			--     xxxxxxx
+			-- clip + display left
+			local x2=s0-1
+			local dx=x2-x0
+			fn(texture,x0,y,x2,y,u0,v0,au+x2*du,av+x2*dv,w0,aw+x2*dw)
+			local n=_pool:pop(x0,x2,w0,dw,span)
+			if old then 
+				set(_ptr,old+4,n)
+			else
+				_spans[y]=n
+			end
+			old=n
+
+			x0=s0
+			--assert(x1-x0>=0,"empty right seg")
+			u0+=dx*du
+			v0+=dx*dv
+			w0+=dx*dw
+			-- check remaining segment
+			goto continue
+		elseif s1>=x0 then
+			--     ??nnnn????
+			--     xxxxxxx	
+
+			--     ??nnnn?
+			--     xxxxxxx	
+			-- totally hidden (or not!)
+			local dx,sdw=x0-s0,get(_ptr,span+3)
+			local sw=get(_ptr,span+2)+dx*sdw		
+			
+			-- use scaled precision for abutting spans (see Christer Ericson)
+			-- use absolute distance for other planes
+			if sw-w0<-0.00001 or (abs(sw-w0)<=1e-5*max(abs(sw),max(abs(w0),1)) and dw>sdw) then
+				--printh(sw.."("..dx..") "..w.." w:"..span.dw.."<="..dw)	
+				-- insert (left) clipped existing span as a "new" span
+				if dx>0 then
+					local n=_pool:pop(
+						s0,
+						x0-1,
+						get(_ptr,span+2),
+						sdw,
+						span)
+					if old then
+						set(_ptr,old+4,n)
+					else
+						-- new first
+						_spans[y]=n
+					end
+					old=n
+				end
+				-- middle ("new")
+				--     ??nnnnn???
+				--     xxxxxxx			
+				-- draw only up to s1
+				local x2=s1<x1 and s1 or x1
+				fn(texture,x0,y,x2,y,u0,v0,au+x2*du,av+x2*dv,w0,aw+x2*dw)					
+				local n=_pool:pop(x0,x2,w0,dw,span)
+				if old then 
+					set(_ptr,old+4,n)
+				else
+					-- new first
+					_spans[y]=n
+				end
+				old=n
+
+				-- any remaining "right" from current span?
+				local dx=s1-x1-1
+				if dx>0 then
+					-- "shrink" current span
+					set(_ptr,span,x1+1)
+					set(_ptr,span+2,get(_ptr,span+2)+(x1+1-s0)*sdw)
+				else
+					-- drop current span
+					set(_ptr,old+4,get(_ptr,span+4))
+					span=old
+				end					
+			end
+
+			if s1>=x1 then
+				--     ///////
+				--     xxxxxxx	
+				return
+			end
+			--         ///nnn
+			--     xxxxxxx
+			-- clip incomping segment
+			--assert(dx>=0,"empty right (incoming) seg")
+			-- 
+			local dx=s1+1-x0
+			x0=s1+1
+			u0+=dx*du
+			v0+=dx*dv
+			w0+=dx*dw
+
+			--            nnnn
+			--     xxxxxxx	
+			-- continue + test against other spans
+		end
+		old=span	
+		span=get(_ptr,span+4)
+::continue::
+	end
+	-- new last?
+	if x1-x0>=0 then
+		fn(texture,x0,y,x1,y,u0,v0,u1,v1,w0,w1)
+		-- end of spans		
+		set(_ptr,old+4,_pool:pop(x0,x1,w0,dw,-1))
+	end
+end
+
+local draw=_draw
+function _draw()
+	draw()
+	--print(_pool:stats(),2,36,7)
+
+	_pool:reset()
+	_spans={}
+end	
+:: map/
+:: map/0.map
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTE1IDE5OjQyOjI5Iixtb2RpZmllZD0iMjAyNC0w
+My0xNiAxODozMjoyMyIscmV2aXNpb249MTMxXV1sejQAaAAAAFgQAADwCHt7Ym1wPXVzZXJkYXRh
+KCJpMTYiLDMyAwAvIjABAP--------------------vxCCIpLGhpZGRlbj1mYWxzZSxwYW5feD0w
+CADSeT0wLHRpbGVfaD0xNgoAEHcKAIB6b29tPTF9fQ==
+:: map/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTE1IDE5OjQyOjI5IixzdG9yZWQ9IjIwMjQtMDMt
+MTUgMTk6NDI6MjkiXV1sejQABAAAAAMAAAAwbmls
+:: sfx/
+:: sfx/0.sfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTE1IDE5OjQyOjMwIixtb2RpZmllZD0iMjAyNC0w
+My0xNiAxODo0NDozOSIscmV2aXNpb249MTM5XV1sejQAEAEAAFEHAADwJ3B4dQADKAAAAwAED0AQ
+Ag4AAaABIAKgDgAPEAAN8MoBAgMEBQYHAA--kAgJCgsPDA8NDw4PDxAA8AANDxEPEg8TDxQPFQ8W
+DxcTAPEBDxgPGQ8aDxsPHA8dDx4PHxQA8QAgDyEPIg8jDyQPJQ8mDycUAPEAKA8pDyoPKw8sDy0P
+Lg8vFADxADAPMQ8yDzMPNA81DzYPNxQA-wU4DzkPOg87DzwPPQ8_Dz8AD--w-wEA6-8nWgEQBg8g
+EAEgASAB8AACEAIMEAEgDyEgATAPQPDDDygP--DGD-gKD-8PgA-3Dw0B8AkBEAYMMAD-OR--AQDc
+v-gPQAANQP--sPBwCgD--2Qf-wEAl1D-----Hw==
+:: sfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTE1IDE5OjQyOjI5IixzdG9yZWQ9IjIwMjQtMDMt
+MTUgMTk6NDI6MjkiXV1sejQABAAAAAMAAAAwbmls
+:: .info.pod
+b64$LS1bW3BvZCxzdG9yZWQ9IjIwMjQtMDMtMTYgMTg6NDQ6MzkiLHdvcmtzcGFjZXM9e3tsb2Nh
+dGlvbj0ibWFpbi5sdWEjMjE0Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0aW9uPSJnZngvMC5n
+ZngiLHdvcmtzcGFjZV9pbmRleD0yfSx7bG9jYXRpb249InNmeC8wLnNmeCIsd29ya3NwYWNlX2lu
+ZGV4PTR9fV1dbHo0AAQAAAADAAAAMG5pbA==
+:: colormap.lmp
+b64$AAIEBggKDA7_-v7_-v7_-hIUFhcZGx0f8PDxbW3t82-eIyUnKSstLy-19fb2-v7_ADIzNVQ6
+PD0-x8bFxcTDwkFDRUdJS01P_Pj5_fr6_-s1VDo9ycfHxcVsbW5ubm9vY2RmaGrq6_zs7u-8b29v
+b87MGRt58Hzs7u-8-f3_-v7_-v4PDqChkJGTlZeZmpyu-v7_D6B-fpCRk5WXmJqcrv7_-v7_-f3v
+fn17eaiqrBL2Dg0MCwoJsLGztba4ury_b29vb29vb29uw8XHyVfNztDQ0NDQ9PQvLy0sKija3N7g
+4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wACBAYICgsND-7_-v7_-v4SFBYXGRsdH-Dw
+8W1t7fPz3iMlJykrLS8v9fX29v7_-gAyMzVUOjw9P8fGxsXEw8JBQ0VHSUtNT-j4_fn6_vr7NVQ6
+PcnHx8bFbG1tbm5ub2NkZmhp6uvr7O3u-G9vb2-OUxkbeXp87O7v-P39-v7_-v7_D6CgopCRk5WX
+mZqMrv7_-g_gf36QkZOVl5majK7_-v7_-v39f359e3moqqwS9g4NDAsKCbCxs7W2uLq8vm9vb29v
+b29vbsPFx8lXzc7Q0NDQ0PT0Ly8tLCoo2tze4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9
+-v8AAgQGCAkLDQ-_-v7_-v7_rhQWFxkbHR-w8PFsbe1u8yEjJScpKy0vL-T19fb_-v4AMjM1VDo8
+PT-HxsbFxMPCQUNF4UlKTE74_Pn5_vr6_zVUOsrJyMfGxWxtbW5ubm9jZGZoaWrr6_zt7vxvb29v
+M1MZGx56e_zu7_-9-f7_-v7_-g_goKKQkpSVl5majK7_-v4PoH_QkJKTlZeZmoyu-v7_-v79-X9_
+fHunqKqsrvYODQwLCgmwsbO1t7m6vL5vb29vb29vb27ExcfJy80z0NDQ0NDR9C8vLSwqKNrcIeDh
+4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AAIEBggJCw0P-v7_-v7_-hKtFXQZGx0f8PDx
+8W3tbvMhIyUnKSssLy-09fX29v7_ADIzNVQ5PD0-P8bGxcTDwkFD4OFISkxO_Pj5_fn6_vs1VDnK
+ycjHxsVsbW1ubm5vYmRmaGlq6_vs7e78b29vbzNTGBseenvs7e7v-f3_-v7_-v4PoKCikZKUlZeZ
+mowR-v7_oKB-kJCSk5WXmZqMEf7_-v7_-f1-fnx7p6mrrBL2Dg0MCwoJsLKztbe5ury_b29vb29v
+b8HCxMXHycvNM9DQ0NDQ0fQvLy0rKSja3CHg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_
+-wACBAYICQsND-7_-v7_-v6urRV0GRsdH-Dw8fFtbW5uISMlJykqLC4v9PX19vb_-gAyMzVUOTw9
+Pj-HxsXEw8JBQ_DhSEpMTk-4_fn5_vr7NVQ5ysnIx8bFbG1tbW5ubmJkZmhpaurr7O3u-G9vb28z
+UxgbHnp7fO3u7-39-v7_-v7_D6ChopGSlJWXmZqMEf7_D6Cgf5CQkpSVl5majBH_-v7_-v2gf358
+e6epq6yu9g0NDAsKsLCys7W3ubq8vm9vb29vb2-BwsTGx8nLzTPQ0NDQ0NH0Ly4sKykn2twh4OHi
+4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AAgQGCAkLDQ7_-v7_-v7_rq1zdBkaHB4f8PHx
+bG1ubiEjJScoKiwuLy-19fb2-v4AMjM1VDk7PD4-x8bFxcTDQUPgRkhKTE5P_Pn5_fr6_jVUOcrJ
+yMfGxWxtbW1ubm5iZGZnaWrq6_zt7m9vb29vM80YGh15e3zt7u-9-f7_-v7_Dw6goZCRkpSVmJmb
+jRH_-g_goH_QkZKUlpeZm40R-v7_-v39oH99fHqnqasUrg4NDAsKCrCwsrS1t7m6vL5vb29vb29v
+wcLExsfJy80z0NDQ0NDRLy8tLCspJ9rcIeDh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-
+AAIEBgcJCwwO-v7_-v7_-q4Tc3QZGhweH-Dw8WxtbW4hIyQnKCosLi8v9fX19v7_ADIzNVM5Ozw_
+P8fGxcXEw0FC4EZISkxNT-j4_fn6_vo1UznKycjHxsZsbG1tbm5uYmRmZ2lq6uvs7O5vb29vbzPN
+GBodeXt87e7v-P39-v7_-g8OoKGQkZKUlpiZm40R-v4PoH9_kJGSlJaXmZuNEf7_-v79-aB-fXx6
+eKmrFK4ODQwLCgmwsbK0tre5u7y_b29vb29vb8HDxMbIycvNM9DQ0NDQ0dIvLSwrKSfa3CHg4eLj
+5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wACAwYHCQoMDv7_-v7_-v6uE3N0dRocHh-w8PFs
+bW1uISMkJigqKy4vL-T19fb2-gAyMzVTOTs8Pj-Hx8bFxMNBQkRGSEpLTU-4_Pn5_fr6NVM5ysnI
+x8bGxWxtbW1ubmJkZWdpaurr7Oztb29vb28zzRcaHXnwfO3u7-z9-f7_-v4PoKCikJGTlZaYiZuN
+jv7_D6B-kJCRk5SWmJmbjY7_-v7_-f2gf317enipqxSuDg0MCwoJsLGytLa3ubu8vm9vb29vb29u
+w8XGyMnLzTPQ0NDQ0NHSLy0sKikn2yMh4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8A
+AgMFBwgKDA4P-v7_-v7_rhNzdBgaGx4f8PDxbG1tbiHdJCYoKSstLy-09fX29v4AMjM1Uzk7PD4-
+x8fGxcTDQUJERkhJS01P_Pj5_fn6_jVTOcrJyMjHxsVsbW1tbm5iZGVnaWnq6_zs7W9vb29vM80X
+Gh15enx97u-8-f3_-v7_D6CgopCRk5WWmJqbjY7_-qCgf5CQkZOUlpiZm42O-v7_-v39f359e6ao
+qasUrg4NDAsKCbCxs7S2t7m7vL5vb29vb29vbsPFxsjJy80z0NDQ0NDR0tPVKyooJ9sjIeDh4uPk
+5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AAIDBQcICgwND-7_-v7_-q4TcxZ1GhsdH-Dw8Wxt
+bW4h3SQmKCkrLS8v9PX19vb_ADIzNVM5Ozw9P8fHxsXExEFCREZHSUtNTvj4_fn5_vo1UznKysjI
+x8bFbGxtbW5uYmNlZ2hp6uvr7O3ub29vbzPNFxodeXp7fe7v7-39-v7_-g6goaKQkpOVlpiam42O
+-g_goH_QkJGTlJaYmZuNjv7_-v79-X9_fXumqKmrFK4NDAsLCgmwsbO0tri5u7y_b29vb29vb27D
+xcbIWMvNM9DQ0NDQ0dLU1SsqKCfbIyHg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAh
+AwUHCAoMDQ-_-v7_-v6uE3MWGBkbHR7w8PHxbG1tId0kJigpKy0uLy-19fX29gAyMzVTVTs7PT8-
+x8bFxcRBQkRGR0lLTE5P_Pn5_fr6NVNVOsrJyMfGxWxsbW1tbmJjZWdoaerq6_zt7m9vb28zzRcZ
+HXl6e33t7u-9-f7_-v4OoKGikJKTlZaYmpuNjv4PoKCQkJGSk5WXmJqbjY7_-v7_-aB-fn17pqip
+q62uDQwLCgoJsLGztba4ubu8vm9vb29vb8HCw8XGyMrLzTPQ0NDQ0NHT1NXVKign290h4OHi4_Tl
+5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AIQMFBwgKCw0P-v7_-v7_ERMUFhcZGh0eH-Dw8fFt
+bSHdJCYnKSssLi8v9PX19vYAMjM0Uzg6Oz0-P8fGxcXEQUJERUdJSkxOT-j4_fn5_jRTODrKycjH
+xsZsbG1tbW5iY2VmaGlq6uvs7e5vb29vMs0XGRx4ent97e7v-f3_-v4PDqChkJGSk5WWmJqbjY7_
+D6CgkJCRkpOVl5iam42O-v7_-v2gf358e6aoqautEQ0MCwoJsLCys7W2uLq7vb5vb29vb2-BwsTF
+x8jKVc0y0NDQ0NHR09TV1ioo2dvdIeDh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-ACED
+BQcICQsNDv7_-v7_-hETFBYXGRodHh-w8PHxbW0h3SQmJykqLC4vL-T19fb2ADIzNFM4Ojs9Pj8-
+x8bFxEBCREVHSUpMTU-4_Pn5_fo0Uzg6ysnIx8fGbGxsbW3sYmNlZmhpaurr7O3ub29vbzLNFxkc
+eHp7fO3u7-z9-f7_Dw6gopCRg5SVl5iai42O-g_gf5CQkZKUlZeYmouNjv7_-v39oH9_fHunqKqr
+rRENDAsKCbCxsrS1t7i6u72_b29vb29vwcLExsfIylXNMtDQ0NDR0tPU1dYpKNrb3SHg4eLj5OXm
+5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAhAwUHCAkLDA7_-v7_-v4RExQWFxkaHR0f8PDx8Wxt
+ISIkJicpKiwtLy-09fX19gAyMzRTODo7PD4-P8fGxcRAQkRFR0hKTE1P_Pj5_fn6NFM4OsrJyMfH
+xmtsbG1t7GJjZWZoaWrq6_zs7W9vb28yzXQZd3h6e3x97u-8-f3_-g_goKKQkYOUlpeZmouNjg_g
+oH_QkJGSlJWXmJqLjY7_-v79-aB-faR7p6iqq60RDAsLCgmwsbK0tbe4uru9vm9vb29vb8HDxMbH
+ycpVzTLQ0NDQ0dLT1NXWKSja290h4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AIQMF
+BggJCwwOD-7_-v7_EY0UFhcZGhwdHx-wa-FsbSEiJCYnKCosLS8vL-X19fYAMjM0U1Q5Ozw_Pz-H
+xsXFQEJERUdISktNTvj4_fn5_jRTVDrKyVrHx8ZrbGxtbexiY2RmZ2lq6uvs7O1vb29vMs10GRt4
+eXp8fe7v7-39-v4OoKGikJGTlJaXmZqLjY4PoKB-kJCRkpSVl5iai42O-v7_-f2gfn2kpqepqqut
+EQwLCgoJsLGytLW3uLq7vb5vb29vb29uw8TGx8nKVc0y0NDQ0NHS09TV1iko2tvdIeDh4uPk5ebn
+6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-ACEDBQYHCQoMDg-_-v7_-hGNFBV0GRocHR4f8PDx8W0h
+IiMlJygqKy0vLy-09fX2ADIzNFNUOTo8Pj8-x8bFxUBCQ0XhSEpLTU5P_Pj5_fk0U1Q6yslayMde
+X2xsbG3sYmNkZmdoaurr6_ztb29vbzLNFhgbeHl6fH1_7_-9-f4PDqChgJCCk5SWl5mai42OD6Cg
+kJCQkpOUlpeZmouNjv7_-v2gf359pKanqaqsrREMCwoJCbCxs7S2t7i6u72_b29vb29vwsPFxsfJ
+ylXNMtDQ0NDR0tPU1dYoJ9rb3SHg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAhAwUG
+BwkKDA0P-v7_-v4RjRQVdBgZGx0eH-Dw8fFtISIjJScoKSstLi8v9PX19QAyMzQ1VDk6PD0-P8fG
+xsVAQkNF4UhJS0xOT-j4_fn5NDVUVcrJWsjHXl9rbGxt7GFjZGZnaGlq6_vs7W9vb28yzRYYGnh5
+enx9fn-v-f3_Dw6goYCQgpOVloeZmpyNjg_goJCQkZKTlJaYmZqcjY7_-v79oH9_faWmp6mqrK0R
+DAsKCbCwsrO1tre5ury9vm9vb29vwcLDxcbHycrMYDLQ0NDQ0dLU1dXWKCfa290h4OHi4_Tl5ufo
+6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AIQMEBgcJCgwNDv7_-v7_EY1yFXQYGRscHh-w8PHxbSEi
+IyUmKCkrLC4vL-T19fUAMjM0NVQ5Ojw9Pz8-x8bFQEJDRUZISUtMTU-4_Pn5_TQ1VFVXyVrIx11f
+a2xs6_xhY2RmZ2hpaurr7O1vb29vMs0WGBp3eXp7fH5-7-39-Q8OoKKAkYKElZaHmZucjY6goH_Q
+kJGSk5WWmJmanI2O-v79-aB-fn2lpqepqqytEQsLCgmwsLKztba3ubq8vb5vb29vb8HCw8XGyMlX
+zGAy0NDQ0NHS1NXV1ign2tzdIeDh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-ACEDBAYH
+CAoLDQ4P-v7_-hGNchV0GBkbHB0fH-Dw8WwBIiMlJigpKiwuLy8v9PX1ADIzNDVUOTk7PT4-P8fG
+xUBCQ_BGR0lKTE1P_Pj4_fk0NVRVV8pZyMhdX2tsbOvsYWJkZWdoaWrq6_ztbm9vbzLNFhgad3l6
+e3x_f_-v-f0OoKGigJGDhJWWmJmbnI2OoKChkJCRkpOVlpiZmpyNjv7_-f2gf32kpaaoqaqsrREL
+CgoJsLGytLW2uLm6vL2_b29vb2-BwsTFxsjJV8xgMtDQ0NDR09TV1dYoJ9rc3QHg4eLj5OXm5_jp
+6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAhAwQGBwgKCwwOD-7_-v4REnIVFhcZGhwdHh-w8PFsASIj
+JSYnKSosLS8vL-T19QAyMjQ1Uzk5Oz0_Pz-HxsZAQkPgRkdJSktNTk-4_Pn5NDVTVVbKWcjIXV5r
+a2zr62FiZGVmaGlp6uvs7G5vb28yzRYXGnd4ent8fX-v7-39DqChgICRg4SVl5iJm5yNjqCgkJCQ
+kZOUlZaYmZqcjY7_-v2goKF9pKWnqKmqrK0RCwoJCbCxsrS1tri5u7y9vm9vb29vwcPExcfIycvM
+YDLQ0NDR0dPU1dbWKCfa3CIB4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AIQMEBgcI
+CQsMDg-_-v7_Ea5yFBYXGRobHR4fH-Dx8QEiIyUmJygqKy0uLy-09fUAMjI0NVM4OTs8Pj4-x8bG
+QEJD4EZHSEpLTU5P_Pj5_TQ1U1VWyllayFxeX2tsbOthYmRlZmdpaerr6_xub29vMs0WFxp3eHl7
+fH1_f_-9-Q6goYCBgoOElYeYiZucro6goJCQkJKTlJWXmJmbnK6O-v39oH9_o6Smp6ipdawTEQsK
+CbCwsbO0tbe4ubu8vb5vb29vb8LDxMbHyMnLzGAy0NDQ0dLT1NXW1tjZ2twiAeDh4uPk5ebn6Onq
+6_zt7u-w8fLz9PX29-j5_vv8-f7-ACEDBAYHCAkLDA0P-v7_-hGuExQWFxgaGx0eHx-w8PEBIiMl
+JicoKistLi8vL-T1ADEyNDVTODk6PD0_Pz-HxkBCQ0RGR0hKS0xOT-j4_Pk0NVNVy8pZWshcXl9f
+a2zrYWJjZWZnaWlq6_vsbm9vbzI0cxcZd3h5enx9fn-v-f2goKKAgYKDhZaHiIqLnK6OoKGQkJGS
+k5SWl5iZm5yujv79-aChoqOkpqeoqqusExEKCgmwsLKztLa3uLm7vL2_b29vb8HCw8XGx8hYy8xg
+MtDQ0NHS09TV1tfY2dvcIgHg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAhIwQFBggJ
+CgwNDg-_-v4RrhMUFhcYGhscHh8f8PDxASIjJCYnKCkrLC4vLy-09QAxMjQ1Uzg5Ojw9Pj8-x8ZA
+QkNERUdISUtMTU-4_Pj5NDVTVcvKWFrIXF1fX2ts62FiY2VmZ2hpaurr7G5vb28yNHMXGXd4eXp7
+fX5-7-39oAyigIGCg4WGh4iKi5yujqChkJCRkpOUlpeYmpucro7_-Q6goaKkpaanqKqrrI0RCgkJ
+sLGys7W2t7i6u7y9v29vb2-BwsPFxsfIysvMYDLQ0NDR0tPU1dbX2Nnb3CIB4OHi4_Tl5ufo6err
+7O3u7-Dx8vP09fb3_Pn6_-z9-v8AASMEBQYICQoLDQ4P-v7_Ea4TFBZ0GBkaHB0eHx-w8QEiIyQm
+JygpKiwtLi8v9PQAMTI0NVM4OTo8PT0-P8fGQEFDREXhSElKTE1OT-j4_TQ1U1VVyljJWlxdXl9r
+bOthYmNkZmdoaWrq6_xub29vMjRzdBl2eHl6e3x9f3-v-aAMgICBg4SFhoeIiouMrhCgkJCQkZKU
+lZaXmZqbjK4Q-v2goKGipKWmp6iqq6yNEQoJsLCxsrS1tre4uru8vb9vb29vwcLExcbHycrLzHEy
+0NDQ0dLU1dXW19ja29wiAeDh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AAG7BAUGBwkK
+CwwOD-7_-hGuExQVdBcZGhwdHh8f8PEBIt0kJSYoKSosLS4vLy-0ADEyNDVTODg6Oz09Pz-Hx0BB
+Q0RF4UhJSktNTk-4_Pg0NVNUVVdYWVpbXV5fa2vrYWJjZGZnaGlp6uvsbW5vbzI0c3QZdnh5ent8
+fX5-7-2goYCBgoOEhZaImYqLjK4QoJCQkZKTlJWWmJmam4yuEP79oKGio6SlpqepqqusjREKCbCw
+sbO0tba3ubq7vL2-b29vwcLDxMXGyMnKy1NxMtDQ0NHS1NXV1tfZ2tvcIgHg4eLj5OXm5_jp6uvs
+7e7v8PHy8-T19vf4_fr7-P3_-wABAgQFBgcICgsMDQ4P-v4QrhMUFXQXGRobHR4fH-DwAd7dJCUm
+JykqKywuLy8v9AAxMjM1Uzg4OTs8PT4-P8dAQUNERUZHSUpLTE1P_Pj4MzVTVFVXV1laW1xeXl9r
+62FiY2RlZmhpaWrr621ub29wNHMWGHZ3eHp7fH1_f_-9DKKAgYKDhIaXiJmKi4wRj6GQkJGSk5SV
+lpiZmouMEY8PDqChoqOkpaeoqaqrFI0QCQmwsbKztLW3uLm6u7y_v29vb8HCw8TFx8jJylVTcXDQ
+0NHR09TV1dbY2drb3CIB4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AAQIDBQYHCAkK
+DA0OD-7_EK4TFBUWFxkZGxwdHh8f8AHe3SQlJicoKSssLS4vL-QAMTIzNVM3ODk7PD0_Pz-HQEFC
+REVGR0hJS0xNTk-4_DM1U1RVVldZyVtcXV5fa2tgYmNkZWZnaGlqa_ttbm9vcHFzFhh2d3h5enx9
+fn9-7wyAgIGCg4WGh4iJmouMEY_QkJCRkpOVlZeYmZqLjBGPD6CgoaKjpaanqKmqqxSNEAmwsLGy
+s7S2t7i5uru8vr9vb2-BwsPFxsfIycpVU3Fw0NDR0tPU1dbX2Nna29zeAeDh4uPk5ebn6Onq6_zt
+7u-w8fLz9PX29-j5_vv8-f7-AAECAwUGBwgJCgsMDg-_-hCuExQVFhcYGRocHR4fH-AB3t0kJSYn
+KCkrLC0uLy8vADEyMzQ1Nzg5Ojw8PT8-x0BBQkNFRkdISUpLTU5P_PgzNDVUVctXWFlaXF1eX2tr
+YGJjZGVmZ2hpamvrbW5vb3BxFBYYdnd4eXp7fH1_f__hgIGBg4SFhoeIiZucjBGPkJCQkZOUlZaX
+mJmai4wRjw_goKGjpKWmp6ipqqsUjRAJsLCxsrS1tre4ubq8vb6-b29vwsLExcbHyMlXVc1xcNDQ
+0dLT1NXW19jZ2tvd3gHg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wABAgMFBQcICQoL
+DA0OD-4QERITFRZ0GBkaGx0dHh8fIN4iIyUmJygpKissLi8vLwAxMjM0NTc4OTo7PD0_Pz9AQUJD
+4EZHSElKS0xNTk-4MzQ1VFXLV1hZWltdXV5fa2BhYmRlZmdoaWpr621ub29wcRQWF3Z3eHl6e3x9
+fn-vC4CBgoOEhYaHiImbnI2Oj5CQkZKTlJWWl5iZmpyNjo8OoKGio6Slpqeoqaurra4QCbCxsrO0
+tba3uLm6vL2_v29vwcLDxMXGx8jJy1XNcXDQ0NHS09TV1tfY2drc3d4g4OHi4_Tl5ufo6err7O3u
+7-Dx8vP09fb3_Pn6_-z9-v8AAQIDBAUGBwkKCwwNDg-_EBESExQWdBgZGhscHR4fHyAhIiMkJSYo
+KSorLC0uLy8AMTIzNDU3Nzg6Ozw9Pj8-QEFCQ_BF4UhJSktMTU5P_DM0NVRUy1dYWVpbXF1eX2tg
+YWJjZGVnaGlpa_ttbsFvcHEUFhd1d3d5ent8fX5-f4CAgYKDhIWGh4mJm5yNjo_QkJGSk5SVlpeY
+mpucjY6PDqChoqOkpaanqKmrrK2uELCwsbKztLW2t7i6u7y9vr9vb8HCw8TFxsfJysvMzc5w0NDR
+0tPV1dbX2Nnb3N3eIODh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AAECAwQFBgcICQoL
+DQ4P-hAREhMUFRYYGBkbHB0eHx8gISIjJCUmJygpKywtLi8vADEyMzQ1Njc4OTo7PD0-P0BBQkNE
+ReFHSElKTE1OT08zNDVTVFVWWFhZW1xcXl9fYGFiY2RlZmdoaWprbG1ub3BxcnMXdXZ3eHl6e3x9
+f3_AgIKChISGh4iJipuMjY6PkJCRkpOVlpaYmZqbnI2Oj6CgoaOkpKanqKmqq6ytrhCwsLGys7W2
+t7i5uru8vb6-b2-CwsPFxsfIycrLzM3OcNDR0tPU1dbX2Nna29zd3iDg4eLj5OXm5_jp6uvs7e7v
+8PHy8-T19vf4_fr7-P3_-wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJico
+KSorLC0uLwAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PMzQ1U1RVVldYWVpbXF1eX2Bh
+YmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5-gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJma
+m5yNjo_goaKjpKWmp6ipqqusra4QsLGys7S1tre4ubq7vL2_v2-BwsPExcbHyMnKy8zNznDQ0dLT
+1NXW19jZ2tvc3d4g4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AAQIDBAUGBwgJCgsM
+DQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8AMTIzNDU2Nzg5Ojs8PT4-QEFCQ0RF
+RkdISUpLTE1OTzM0NVNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1_
+f4CBgoOEhYaHiImKi4yNjo_QkZKTlJWWl5iZmpucjY6PoKGio6SlpqeoqaqrrK2uELCxsrO0tba3
+uLm6u7y9vr9vwcLDxMXGx8jJysvMzc5w0NHS09TV1tfY2drb3N3eIODh4uPk5ebn6Onq6_zt7u-w
+8fLz9PX29-j5_vv8-f7-AAECAwQFBgcICQoKCwwNDhAREhMUFRZ0FxkZGhscHR4gISIjJCUmJygp
+KSorLC0uADEyMzQ1NjY4OTo6Ozw9PkBBQkNERUbhSEhJSktMTU4zNDVTVFVWV1dZWlpbXF1eYGFi
+Y2RlZmdoaWprbG1uwXBxcnN0dXZ3eHl6e3t8fX6BgoODhYWGh4iJiouMjY6PkZKTlJWVlpeYmZqL
+jI2Oj6Gio6OlpaanqKmqq6ytrhCxsrO0tbW2t7i5uru8vb6-wcLDxMXFxsfIycpVzM3OcNDR0tPU
+1dbX2Nna29zd3iDg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wABAgMEBAYGBwgJCgsM
+DQ4QERITchUVdBcYGRobHB0eICEiIyQkJSYnKCkqKywtLgAxMjM0NTY2Nzg5Ojs8PT5AQUJDROBF
+4UdISUpLTE1OMzQ1U1NVVVZXWFlaW1xdXmBhYmNjZGVmZ2heX2tswsFwcXJzFhd1dnd4eXp7fH1_
+gYKDhIWGh4iIioqLjI2Oj5GSk5SVlpeYmYmai4yNjo_hoqOkpaanqKmqqqusra4QsbKztLW2t7i5
+ubq7vL2_v8HCw8TFxsfIycpXVczNznDR0tPU1NbX2Nna29vcIiEg4OHi4_Tl5ufo6err7O3u7-Dx
+8vP09fb3_Pn6_-z9-v8AAQIDBAQFBgcICQoLDAwNEBESEnIUcxYXGBkaGhscHSAhIiMjJCUmJygp
+KiorLC0AMTIzNDQ2Njc4OTk7PD09QEFCQ0PgRUZHSElKS0tMTTM0NFNTVFVWV1hZWlpbXV1gYWFi
+Y2RlZmdoaV9rbMPBcHETFBZ0dXZ3eHl6e3x9foGCg4SFhoeIiYqbnI2Njo_RkpOUlZaXmJmKm4uM
+jY6PoaOjpKWmp6ipqqusrK0RELKzs7S1tre4ubq7u7y9vr-BwsPExcbHyMnKy1VTzc5w0dLT1NXW
+19jZ2tvc3CIhIODh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AAECIwMEBQYHCAkJCgsM
+DRAREhITFHMWdBcYGRobHB0gId7dIyQlJicoKCkqKywtADExMzM0NTY3ODk5Ojs8PUBBQkJDREVG
+R0hISUpLTE0zMzQ1U1RVVlZXWVlaW1xdYGBhYmNkZWZnaGlea2zDwjHOExQWdHV2d3h5ent7fH2C
+g4SFhoaHiImKi5yNro6PkpOUlZaWh5iZipucjK6Oj6KjpKWmpqeoqaqrrBQTERCys7S1tra3uLm6
+u7y9vb6-wsPExcXGx8jJysvMU83OMdHS09TV19fY2drb3N0iISDg4eLj5OXm5_jp6uvs7e7v8PHy
+8-T19vf4_fr7-P3_-wAgAiMDBAUGBwcICQoLDAwQEBESExRzFnQXGBkaGhscICHeIiMkJSYmJygp
+KiorLAAxMTMzNDU2Njg4OTo7PD1AQUFCQ0RFRuFHSElKS0tMMzM0NVNUzFZWV1hZWlpbXc5gYWJj
+ZGVlZmddXl9sxMIxMxNyFXR1dnd3eHl6e3x9goOEhYaHh4mJiouMja4Qj5KTlJWWl5iYmZqbnI2u
+EI_io6SlpqeoqKmqq6wUjREQsrO0tba3uLi5uru8vb6_v8LDxMXGx8jIycrLzM00zjHS09PU1tfY
+2dna29zdIiEg4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AICECAwQFBgYHCAkKCgsM
+EBAREhMUFBYWdBgYGRobHCAB3iIjJCQlJicoKCkqKywAMTEyMzQ1NTY3ODk5Ojs8QEFBQkNE4EVG
+R0hISUpLTDIzNDXNVMxVVldYWVlaW1zOYGFiY2NkZWZnaF1excTDMTMSchUWdXV2d3h5enukfIOD
+hIWGh4iJiYqLjI2uEI_TlJWVlpeImYmai5yNrhCPo6SkpaanqKmqqqusrRIRELO0tbW2t7i5urq7
+vL2_vr-DxMXFxsfIyVhXy8zNNM4x0tPU1dbX2Nna29vc3d4hIODh4uPk5ebn6Onq6_zt7u-w8fLz
+9PX29-j5_vv8-f7-ACAhAgMEBAUGBwgICQoLC48QERITchQVFnQXGBkZGhu-Ad4iIyMkJSYnJygp
+KSorADExMjM0NTU2Nzg4OTo7PEBAQUJDROBFRuFHSElKSksyMzQ1zVNUVctWV1hZWVpbzmBhYmJj
+ZGVmZ2ddXsbEwzEzEnIVFnR1dnd4eXl6pXyDhIWGhoeIiYqLi4yNEY_Pk5SVlpeHiJmKmouMjRGP
+j6Okpaanp6ipqqurrK2uEY_ztLW2t7e4ubq7u7y9vr_-w8TFxsfHyMlYV1XMzTTOMdLT1NXX2NjZ
+2tvc3N3eIb-g4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAgIQIDAwQFBgcHCAkKCguP
+EBESEhMUcxYWFxgYGRobvwEhIiMjJCUmJicoKCkqKwAxMTIzNDQ1Njc4ODk5OjtAQEFCQ0NERUbh
+R0hISUpLMjM0Nc1TVFVVVldYWFlaW85gYWJiY2RlZWZnXF3GxcQxMxITFBV0dXZ3d3h5pqWkhISF
+hoeIiImKi4uMjRGPj5SVlZaXiJmJipuLjI0Rj4_kpaWmp6ioqaqrq6ytrhGPtLW2tre4ubm6u7y8
+vb6-v8TExcbHyMjJystVzM00MzHT1NTW19jZ2drb3Nzd3gG-4OHi4_Tl5ufo6err7O3u7-Dx8vP0
+9fb3_Pn6_-z9-v8AvyECAwMEBQYGBwgICQoLvxARrhITchRzFnQXGBgZGr8BISLdIyQlJSYnJygp
+KSoAMTEyMzQ0NTU2Nzg4OTo7QEBBQkJDROBFRkdHSElJSjIzNDU1U1PMVVZWV1hZWVrOYGFhYmNj
+ZGVmZ1tdH8XEMTMSExQVdHWqdnd4p6ampYSFhoaHiImKioucjI0Rj3CUlZaXh4iJiYqbnIyNEY9w
+pKWmpqeoqaqqq6wUra4Rv7S1tre3uLm6uru8vL2_v7-ExcbGx8jJWFfLVVPNcTIx09TV19jY2drb
+29zd3d4Bv_Dh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AL8hAgMDBAUFBgcHCAkJCnAQ
+ERESE3IUcxYWFxcYGRq-ASEiIiMjJCUmJicoKCkpADExMjMzNDQ1Njc3ODk5OkBAQUJCQ0TgRUbh
+R0hISUoyMzM0NVNTzMxVVldXWFlaEWBgYWJiY2RlZmYcXB-GxTEzEhMUFRZ0dXZ3qHinpqWEhYaH
+iIiJioqLjI2uEY9whZWWl4iIiYqKi5yMjRGPcKWlpqeoqKmqq6usFK2uEHC1tra3uLi5uru7vLy9
+vr_-xcXGx8jIyVhXVcxTzXEyMdPU19fY2dna29zc3SLeAb-g4eLj5OXm5_jp6uvs7e7v8PHy8-T1
+9vf4_fr7-P3_-wC-IQIjAwQEBQYGBwgICQpwEBEREhMTFBRzFnQXGBgZvyAhIiIjIyQlJSYnJygo
+KQAxMTIzMzQ0NTY2Nzg4OTpAQEFCQkNDREVFRuFHSElJMjMzNDXNU1TMVVZWV1hZWc5gYGFiYmNk
+ZWVmHFsfxsUxMhITFBQWdHWqqamop6amhYaGh4iJiYqLi4yNro6PcIWGl4eImYmKm4uMja6Oj3Cl
+pqenqKmpqqurrK0TrhBwtba3t7i5ubq7Ary9vb6-McXGx8fIPsnKVlXMzc1xMjHU1NfY2Nna29vc
+3N0i3iC-4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AvwECuwMDBAUGBgcHCAkJMRAQ
+ERISE3IUcxYWdBcYGL8gId4i3SMkJCUmJicnKCgAMTEyMzM0NDU1NjY3ODk5QEBBQUJDQ0TgRUZG
+R0dISTIzMzQ0zc1TzMxWVlYYGVkQEWBhYWJjY2RlZhtbHsfFMTISEnIUFRZ1dXapqKinpoaGh4iI
+iYqKi4yMja6OjzGGloeIiImKiouLjI2ujo8xCKanqKipqqqrrKytE64QMba3t7i5ubq6u7y8vb6_
+vzHFxsfIPz5YV1ZVVM3NcTIx1NfX2NnZ2tvc3N3d3iEgv_Dh4uPk5ebn6Onq6_zt7u-w8fLz9PX2
+9-j5_vv8-f7-AL8BAgIDAwQFBQYGBwgICTEQEBGuEhNyFBRzFhZ0Fxi-IAEhIiIjIyQlJSYmJyco
+ADExMjIzNDQ0NTY2Nzg4OUBAQUFCQkNEREVFRuFHSEgyMjM0NDXNU8zMVVZWGBgZEM5gYWFiYmNk
+ZGUaHFvHxjEyERITFBUWq3Wqqamop6eGh4eIiYmKi4uMjI0Rjo8xhoeHiImJioqLnIyNEY6PMaan
+p6ipqaqrq6wUrRIREDG2t7i4ubm6u7u8vb2_vr8xxsfHyD49ylZVzFPNNHEyMdfX2NnZ2tvc3Nzd
+3d4hIL-g4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wC-ASECIwMEBAUGBgcHCAgxjxAR
+ERISE3IUc3MWFhcXvyABISIiIyMkJCUlJiYnKAAxMTIyMzM0NDU1NjY3ODhAQEFBQkJDQ0TgRUVG
+4UdIMjIzNDQ1zc1TzMxWVlZkGBCOYGBhYWJjY2RlGhtax8cxMhESExQUrKurqqqpqKinhoeIiImK
+iouLjI2Njo6PMYeHiJmJioqbi4yNjY6OjzEHp6ioqaqqq6ysra2uERAxtwS4ubm6uru8vL29vr6-
+McfHPz8_PFdWVcxTzTQzcDHX2NjZ2dvb3Nzd3SLeISC-4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3
+_Pn6_-z9-v8AvwEhArsDAwQFBQYGBwcIMY8QERESEhMTFBRzcxYWF78gASHeIt0jIyQlJSYmJicA
+MTEyMjMzNDQ1NTY2Nzc4QEBBQUJCQ0NEROBFRkbhRzIyM3E0NM3NU8zMzFZWZGQQjmBgYWFiYmNk
+ZBkaWsjHMTIREhMTFBWsq3WqqamoqIcFiImJiouLjIyNro4QjzGHiIiJiYqbi5yMja6OEI8xBwao
+qaqqq6usrK0TrhEQMQS4ubm6uru7vLy9vb6-vzHHyD8_PTxXVlVUzc1xM3Ax2NjZ2dvb3Nzc3d0i
+3iEgv_Dh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AL8BIQICAwMEBAUFBgYHBzGPEBAR
+rhITE3IUc3NzFha-IAEh3iIiIyMkJCUlJiYnAAAxMTIzMzM0NDU1NjY3NwBAQEFBQkJDQ0RERUVG
+RuExMjMzcTQ1zc1TzMzMY2RkEI4RYGFhYmJjY2QYGlk-P0AyERESExQUrKurqqqpqagFiASJioqL
+i4yMja6OEI9AiIiJiYqKi4uMjI2ujhCPQAaohwWqqqurrBStja4REDG4uLkDuru7Ary9vQG_v78x
+Pz8_PTxXVlVUU83NcTNwQNjZ2dvc3Nzc3d3d3t4BIL-g4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4
+_fr7-P3_-wC-ASECAiMDAwQEBQUGBgcxcBAQERESEhMTchQUc3MWvyAgISEiIt0jIyQkJSUmJgAA
+MTEyMzMzNDQ1NTU2NjcAQEBBQUJCQ0NDROBFRUZGMTIzM3E0NM3NzVPMzBZjY48QEWBgYWFiYmNk
+GBlZPj9AcBEREhMTFKysq6uqqqmoBQSJioqLi4yMjY0Rjo9wQIiJiYqKi4ucjI2Nro6PcEAGBQWq
+qqurrKytra6uEI8xuLkDurq7Ary8vb0Bvr_-MT8_PTxXOlVVVFPNNHEzcEDZ2dzc3Nzc3d3dIt4h
+ICC-4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AvwEBAgK7AwMEBAUFBgYGMTEQEBAR
+ERISExNychRzc7_-IAEh3iIi3SMjJCQlJSYAADExMjIzMzM0NDQ1NTY2AEBAQUFBQkJDQ0RE4EVF
+RjEyMjMzNDQ1zc3NYsxiY2OPEBFgYGFhYWJiYxcYWD0_QHAQERISExQUrKurdaqqqQQEigMDi4uM
+jI2uERCPMUCJiYqKi4uLjIyNrhGOjzFABQUFBImrrKytrY2uERCPMbkDurq7uwK8vb0Bvr_-vzE_
+Pjw8OlZVVFPNzTRxM3BA3Nzc3Nzc3d3d3d7eISAgv_Dh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5
+_vv8-f7-AL8gASECAgMDAwQEBQUFBjExMhAQERESEhITcnJyFHMxvyABISEiIt0jIyMkJCUlAAAx
+MTIyMzMzNDQ0NTU1NgBAQEFBQUJCQkNDRETgRUUxMjIzM3FxNDXNzc1iYmJjcBCOEWBgYWFiYmNj
+VldYPUBwEBGuEhMTFBWsq6urqqoEiQMDi4uMjI2Nro4QjzFAiYqKm4uLjIyNja6OEI8xQAUFBASr
+q6ysra2NrhEQjzEDurq7uwK8vL29Ab6-vzEAPT08OlZVVFRTzTRxMzJwQNzc3Nzc3d3d3d7e3iEg
+IDHg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAxIAEhAgICAwMDBAQFBQUxMXAQEBER
+ERISEhMTcnIUMb8gASEh3iIi3SMjIyQkJAAAMTExMjIzMzM0NDQ1NTUAQEBAQUFBQkJDQ0NERODg
+MTEyMzMzcTQ0YM3NzWJiYnCPEI5gYGBhYWJiFnRWVzxAMRAQEa6NE60UrKyrq6qqJAMDi4uMjI2N
+rhGOj48xQIqKi4uLjIyMja6Ojo_PMUAFBASrA6ysra2NrhEREL8xurq7AgK8vL29Ab6_v78xADw8
+OlY5OFRTzTU0cTMyMUDc3N3d3d3d3d7e3iEgIL8x4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6
+_-z9-v8AMb8BISECAiMDAwMEBAUFQDFwEBAQEREREhISExNycgC-ICABISHeIiLdIyMjJCQAAAAx
+MTIyMjMzMzQ0NDQ1AEBAQEFBQUJCQkNDQ0NERDExMjIzM3FxNGBgzc1hYmJwjxCOEWBgjWFhYmIW
+VlY7ADEQEBEREo0TrRSsrKurqwMDA4sCjAKNrq6OEI_PQECKi4uLjIyMjY2ujo6Pj0BABASrA6ys
+ra2tja4REBAxQLq7AgICvL29AQG_vr_-MQA7Ojk5OFRTzc00NHEzMjEA3d3d3d3d3d7e3t4hICC-
+AODh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-ADG-AQEhAgICIwMDAwQEBEAxMXAQEBAR
+ERESEhISE3IAv78gAQEhId4iIiLdIyMjAAAAMTEyMjIzMzMzNDQ0NABAQEBAQUFBQkJCQkNDQ0Qx
+MTIyMjMzcXFxYGDNYWFhcHAQEI4RYGCNYWFiczg5OgAxMhAREa4SExOtFKysq6sDIwICAgKNrq4R
+jhCPcEBAi4uLjIyMjY2ujo4Qj3BAQAQDAwOsra2tja6uERAQMUACAgK8vL29vQG_vr_-vzEAOjk5
+OFRTzc01NHEzMjIxAN3d3d3d3d7e3t4hICAgvwDg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7
+-P3_-wAxvyABASECAgIjAwMDBARAMTFwEBAQEBERERISEhITAL_-ICABISEh3iIiIt3dIwAAADEx
+MTIyMjMzMzMzNDQAQEBAQEFBQUFCQkJCQ0NDMTExMjIzMzNxcXFgYGBhYTFwjxCOjhFgYBNhYWJz
+ODkAMTIQEBERro2Nra0UrKysIwICAgKNrq4RARCPjzFAQIuMjIyNjY2uEY4Qj48xQEADAwOsra2t
+ja6uERAQvzFAAgK8vL29vQEBvr_-v78xADk4OFRTNjU1NHEzMzJwMQDd3d3e3t7e3t4hICAgIL8A
+4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AAL_-AQEhIQICArsDAwMDAEAxMXAQEBAQ
+ERERERISEgAxvyAgIAEhISHeIiIiIt0AAAAxMTEyMjIyMzMzMzM0AABAQEBAQUFBQUFCQkJCQzEx
+MTIyMhAzM3FxcWBgYGAxcHCPEI6OEWBgYBNyNjc4ADFwMhAQERGuro2tra2LrAICAgIhrq4BARAQ
+j48xQACMjIyNja6uEY6Oj4_PMUAAA6wCAq2tja6uEQEQEL8xAAK8vb29AQEBvr_-v78xAAA4ODdT
+zTU1NHFxMzIycEAA3t7e3t7e3t4hICAgIL_-AODh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8
+-f7-AAC-vyABASEhAgICAiMDAwBAMTExcDIQEBAQERERERIAMb_-ICAgAQEhISHe3iIiAAAAMTEx
+MTEyMjIyMzMzMwAAQEBAQEBBQUFBQUJCQkIxMTExMjIyMjMzznFxcWBgMTFwj48Qjo4REWBgE802
+NwAxMXAQEBAREa6ujROtra0CAiEhrq4BAQEQj48xMUAAjI2Nja6uEY6Oj4_PMTFAAAICAgKNja6u
+EQEQEL8xMQAhvb0BAQEBIL_-v78xMQAAN1M2NTU0NHEzMzMycDFAAN7e3t7e3t4gICAgICC-MQDg
+4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-wAAMb_-IAEBISEhAgICAgIAQDExMTFwMhAQ
+EBAQERERAAAxv78gICABASEhISHe3gAAAAAxMTExMTIyMjIyMzMAAEBAQEBAQEBBQUFBQUFCADEx
+MTEyMjIyEDMzzs7OzkAxMXCPjxAQjhERYBISNTYAQDExcBAQEBEREa6ujY2tISEhrgEBARAQj4_P
+MUBAAI2Nrq4RjgEQj4_PjzFAQAACAgKurq4REQEQEI_-MUAAvQEBAQEgIL_-v7_-MQAAADY1NTQ0
+NHEzMzIyMjExQADe3iAgICAgICAgICC-vwAA4OHi4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9
+-v8AADG-v78gAQEBISEhAgICAABAQDExMXBwMhAQEBAQEAAAAL_-v78gICABAQEhISEAAAAAADEx
+MTExMTIyMjIyAAAAQEBAQEBAQEBBQUFBQQAAMTExMXAyMjIyEBAQEM5AQDFwcI_PjxAQERFxcTQ1
+AAAxMTFwjxAQEBEREa6uriEBAQEBARCPj4_PMUBAAACuEY4BARAQj4_PMTFAQAAAAq6urhEBAQEQ
+EI8xMTEAAAEBASAgv7_-v78xMQAAAAA1NDQ0cTMzMzIyMnAxMQAAICAgICAgICAgIL_-vwAAAODh
+4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-AAAAMb_-v78gAQEBAQEhIQAAAEBAMTExMTEx
+cHAyMhAAAAAxMb_-v78gICAgICABAAAAAAAAMTExMTExMTExMgAAAABAQEBAQEBAQEBAQEEAAAAx
+MTExMTFwcHAyEBAQAEBAQDExcHCPjxAQMzMzNAAAQDExMTGPjxAQEBAREREBASAgII_Pv78xMUBA
+AAAAAQEQj4_Pj4_PMUBAQAAAAK4BAQEBEBAQv78xMTFAAAAgIL_-v7_-vzExMQAAAAAANDMzMzMy
+MjIycDExMUAAACAgICAgICAgv7_-vwAAAADg4eLj5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_
+-wAAAAAxMb_-v7_-ICABAQEAAAAAAABAQDExMTExMTExAAAAAAAAMb_-v7_-v78gIAAAAAAAAAAA
+ADExMTExMTEAAAAAAAAAQEBAQEBAQEBAAAAAAABAMTExMTExMXBwcAAAQEBAQEAxMXBwcDIyMjMA
+AAAAQEAxMTExcI8QEBAQEL_-v7_-vzFAQEAAAAAAAI_Pj4_PvzExQEBAQAAAAAABEBAQv7_-MTEx
+MUAAAAAAv7_-v78xMTEAAAAAAAAAADMyMjIyMnAxMTExQEAAAAAgIL_-v7_-v78AAAAAAAAA4OHi
+4_Tl5ufo6err7O3u7-Dx8vP09fb3_Pn6_-z9-v8AAAAAAAAAADExMTG-v7_-AAAAAAAAAAAAAAAA
+QEBAMQAAAAAAAAAAAAAAADExMTEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAAAAAAA
+AAAAAABAQEBAQEAAAAAAAABAQEBAQDExMTExAAAAAAAAAEBAQEAxMTExMTExMUBAQAAAAAAAAAAA
+AAAxQEBAQEBAAAAAAAAAAAAAvzExMTExMUAAAAAAAAAAADEAAAAAAAAAAAAAAAAAAAAxMTExMTEx
+MUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAODh4uPk5ebn6Onq6_zt7u-w8fLz9PX29-j5_vv8-f7-
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADg4eLj
+5OXm5_jp6uvs7e7v8PHy8-T19vf4_fr7-P3_-yA=
+:: [eoc]

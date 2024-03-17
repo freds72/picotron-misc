@@ -192,19 +192,27 @@ function draw_model(model,m_obj,cam,id)
 	local m_n=make_m()
 	set(m_n,0,0,get(m,0,0,9))
 
-	for i,face in pairs(model.f) do
+   local cache,verts={},{}
+   for i,face in pairs(model.f) do
 		-- is face visible?
 		if face.n:dot(cam_pos)>face.cp then
-			local avg=vec(0,0,0)
-			local verts,outcode,nearclip={},0xffffffff,0
+			local outcode,nearclip=0xffffffff,0
 			for k,v in ipairs(face) do
-				-- transform to cam
-				local code,a=2,v:matmul3d(m)
-				avg:add(a,true)
-				if(a.z>1) code=0
-				local w=fov/a.z
-				-- attach u/v coords to output
-				verts[k]=vec(480/2+270*w*a.x,270/2-270*w*a.y,a.z,w,face.uv[2*k-1]*16*w,face.uv[2*k]*16*w)
+				local a=cache[k]
+				if not a then
+					-- transform to cam
+					local code=2
+					a=v:matmul3d(m)
+					if(a.z>1) code=0
+					local w=fov/a.z
+					-- attach u/v coords to output
+					a=vec(480/2+270*w*a.x,270/2-270*w*a.y,a.z,w,0,0,code)
+					cache[v]=a
+				end
+				verts[k]=a
+				local w=a:get(3)
+				a:set(4,face.uv[2*k-1]*16*w,face.uv[2*k]*16*w)
+				local code=a:get(6)
 				outcode&=code
 				nearclip+=code&2
 			end
@@ -278,7 +286,7 @@ function _draw()
 	local r={"x","y","z"}
 	for i=-2,3 do
 		for j=-2,3 do			
-			local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation(rnd(r),(0.125*i*j))):matmul3d(m_translate(vec(2*i,2*j,0)))
+			local m = m_translate(vec(-0.5,-0.5,-0.5)):matmul3d(m_rotation(rnd(r),time()/(0.125+i+j))):matmul3d(m_translate(vec(2*i,2*j,0)))
 			draw_model(cube_model,m,cam,(i+5*j))
 		end
 	end
@@ -328,8 +336,8 @@ function polytex(p,np,texture,color)
 			local v1=p[lj]
 			local y0,y1=v0.y,v1.y
 			ly=y1\1
-			set(l,0,get(v0,0,6))
-			set(dl,0,get(v1,0,6))
+			blit(v0,l)
+			blit(v1,dl)
 			dl:sub(v0,true):div(y1-y0,true)
 			--sub-pixel correction
 			l:add(dl * (y-y0),true)
@@ -341,13 +349,13 @@ function polytex(p,np,texture,color)
 			local v1=p[rj]
 			local y0,y1=v0.y,v1.y
 			ry=y1\1
-			set(r,0,get(v0,0,6))
-			set(dr,0,get(v1,0,6))
+			blit(v0,r)
+			blit(v1,dr)
 			dr:sub(v0,true):div(y1-y0,true)
 			--sub-pixel correction
 			r:add(dr * (y-y0),true)
 		end
-		
+
 		local lx,_,_,lw,lu,lv=get(l,0,6)
 		local rx,_,_,rw,ru,rv=get(r,0,6)
 		if rx>=0 and lx<480 then
@@ -364,13 +372,14 @@ function polytex(p,np,texture,color)
 			lu+=sx*du
 			lv+=sx*dv
 			lw+=sx*dw
-			--tline3d(texture,lx\1,y,rx,y,lu,lv,ru,rv,lw,rw)
-			spanfill(lx\1,rx\1-1,y,lu,lv,lw,ru,rv,rw,function(...)
-			 tline3d(...)
-			 if(btn(4)) flip()
-			end,texture)
+			-- rectfill(lx\1,y,rx,y,7)
+			tline3d(texture,lx\1,y,rx,y,lu,lv,ru,rv,lw,rw)
+			--spanfill(lx\1,rx\1-1,y,lu,lv,lw,ru,rv,rw,function(...)
+			-- tline3d(...)
+			-- if(btn(4)) flip()
+			--end,texture)
 		end
-
+		
 		l:add(dl,true)
 		r:add(dr,true)
   end
@@ -581,4 +590,4 @@ function _draw()
 
 	_pool:reset()
 	_spans={}
-end
+end	
