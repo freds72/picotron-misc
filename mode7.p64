@@ -1,0 +1,106 @@
+picotron cartridge // www.picotron.net
+version 2
+
+:: gfx/
+:: gfx/0.gfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTAxIDE4OjU0OjU2Iixtb2RpZmllZD0iMjAyNC0w
+NC0wMSAxOToyMTo1NyIscmV2aXNpb249OTZdXWx6NABSAQAAVTIAAPwRe1swXT17Ym1wPXB4dQBD
+ICAgBP8VAwb_Dgb_BgYuBi4HAPAWAv8ODh4N9gwNHg0WLxcGLw0GbAYsBiwGDAYNHg0GLxcGLAZs
+BREAERwRABAbDgABEAARLBAAIAsFEAAxbAY8DgAWBR0AAkAAFSwQAARBABEcEgACZACBDQ4FDQYM
+BSwTAAACAHE8Bg0FDg0GUgAAIQAVTEUAABAAFVxBAAIeAAdBABKsPQCFHg0GPAWsBmx_ABCsPQAH
+egAAHAAjDR51AEEGbAZ8DgBRfAZsBYwKAABIABGcCgAQnGEAEgUuAEHMBiwFKgAAJwHzA-0O-lAs
+ZmxhZ3M9MCxwYW5feAgAx3k9MCx6b29tPTh9LIEBXxAQBPDwMQD-------------------------
+---------------------------------------XUG09OH19
+:: gfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTAxIDE4OjU0OjUxIixzdG9yZWQ9IjIwMjQtMDQt
+MDEgMTg6NTQ6NTEiXV1sejQABAAAAAMAAAAwbmls
+:: main.lua
+--[[pod_format="raw",created="2024-04-01 17:32:50",modified="2024-04-01 19:21:57",revision=281]]
+function _init()
+	-- create automatic fading map
+   poke4(0x5000,0xff000000,0xffaaaaaa,0xfffcfcfc,0xfff7f7f7,0xff5f5953,0xff725310,0xffb98e36,0xffdfbe40,0xff5b5c47,0xff6c6ba4,0xffaad7f6,0xffe9f7f7,0xff585350,0xff424200,0xff8d7b0a,0xffbba90d,0xff534302,0xff600000,0xffa40000,0xffd80000,0xff693902,0xff837006,0xffd3a522,0xffeacd1d,0xff835c21,0xffc66937,0xfff2c66e,0xfff6ec37,0xff6a5d0b,0xffaf794d,0xfff8d996,0xfffffff5,0xfffafafa,0xffceb0b3,0xff874365,0xff655a5c,0xffefedeb,0xffd3a7a8,0xff894568,0xff625657,0xfff6f8f8,0xfffaeccf,0xffb18364,0xff62645f,0xffc5cecf,0xff949895,0xff475f57,0xff555721,0xfff6eb18,0xfffff21b,0xffbea800,0xff422f50,0xff0000f7,0xff6c8cf4,0xff797ba9,0xff303150,0xff420000,0xff8b1100,0xffca5e27,0xffe7ad64,0xffc5bd76,0xffa7c9d4,0xffcd5629,0xffeed3b3)	
+   
+   -- read rgb colors
+   local palette={}   
+   for i=0,63 do
+   		local rgb=peek4(0x5000+4*i)
+   		local r,g,b=1.0*((rgb&0xff0000)>>16),1.0*((rgb&0xff00)>>8),1.0*(rgb&0xff)   			
+   		palette[i]=vec(r,g,b)  	  		
+	end
+	fade_palette=userdata("u8",64*64)
+	
+	for i=0,63 do
+	   local src=palette[i]
+		-- 16 color ramp
+		for j=0,15 do
+		 --
+		 local t=j/15
+		 local dst=src*t
+		 -- find closest color
+		 local min_dist,min_i=32000
+		 for k=0,63 do
+		  local d=palette[k]:distance(dst)
+		  if d<min_dist then
+		   min_dist=d
+		   min_i=k
+		  end
+		 end
+		 --
+		 fade_palette[i*64+(15-j)]=min_i
+	 end
+	end
+	memmap(0x8000,fade_palette)
+	-- create a texture bitmap and draw something on it
+	ss = userdata("u8",32,32)
+	set_draw_target(ss)
+	spr(0,0,0)
+	set_draw_target()	
+end
+
+local dz,dy=0,0
+local cx,cy,cz=0,20,0
+local angle=0
+function _update()
+ if(btn(2)) dz-=1/16
+ if(btn(3)) dz+=1/16
+ 
+ if(btn(0)) angle-=1/64
+ if(btn(1)) angle+=1/64
+ 
+ if(keyp('space')) dy=1
+ 
+ cx+=dz*sin(angle)
+ cz+=-dz*cos(angle)
+ cy=max(cy+dy,20)
+ dy-=0.02
+ dz*=0.8
+end
+
+function _draw() 
+ cls()
+ local ca,sa=cos(angle),-sin(angle)
+ 
+ for ye=135,269 do
+		-- coords in world space
+		local rz=(cy*135)/(ye-135)
+		local rx0=rz*(0-240)/135
+		local rx1=rz*(240)/135
+		local x0,z0=ca*rx0+sa*rz+cx,-sa*rx0+ca*rz+cz
+		local x1,z1=ca*rx1+sa*rz+cx,-sa*rx1+ca*rz+cz
+		local ramp=rz//64
+		if(ramp>15) ramp=15
+		rectfill(0,ye,479,ye,ramp)		
+		--for i=0,63 do
+		-- poke(0x8000+i*64,fade_palette[i*64+ramp])
+	   --end
+		tline3d(ss,0,ye,479,ye,x0,z0,x1,z1)		
+ end
+ print(string.format("%.4f %dfps",stat(1), stat(7)),2,2,5)
+end
+
+:: .info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTAxIDE3OjMyOjQyIixydW50aW1lPTQsc3RvcmVk
+PSIyMDI0LTA0LTAxIDE5OjIxOjU4Iix3b3Jrc3BhY2VzPXt7bG9jYXRpb249Im1haW4ubHVhIzgw
+Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0aW9uPSJnZngvMC5nZngiLHdvcmtzcGFjZV9pbmRl
+eD0yfX1dXWx6NAAEAAAAAwAAADBuaWw=
+:: [eoc]

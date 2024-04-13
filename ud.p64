@@ -1,0 +1,43 @@
+picotron cartridge // www.picotron.net
+version 2
+
+:: main.lua
+--[[pod_format="raw",created="2024-03-29 15:33:59",modified="2024-03-30 06:42:35",revision=5]]
+a=userdata("f64",3,4)
+for i=0,2 do
+ for j=0,3 do
+  a:set(i,j,1+i+j*3)
+ end
+end
+values={0,0,0,0,0,0}
+sel=0
+names={"offset1","offset2","len","stride1","stride2","spans"}
+
+function _update()
+    local delta=0
+    if(btnp(0)) sel-=1
+    if(btnp(1)) sel+=1
+    if(btnp(2)) delta=1        
+    if(btnp(3)) delta=-1
+    sel=sel%#values
+    values[sel+1]=values[sel+1]+delta
+end
+
+function _draw()
+ cls()
+ local out=a:mul(10,false,table.unpack(values))
+ for i=1,#names do
+     print(names[i],(i-1)*48+2,32,i==sel+1 and 8 or 7)
+     print(values[i],(i-1)*48+2,40,i==sel+1 and 8 or 7)
+ end     
+ if out then
+     for j=0,3 do
+        print(string.format("%.3f\t%.3f\t%.3f",out:get(0,j),out:get(1,j),out:get(2,j)),2,64+j*8,7)
+     end
+ end
+end
+:: .info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTI5IDE1OjMzOjUxIixydW50aW1lPTQsc3RvcmVk
+PSIyMDI0LTAzLTMwIDA2OjQyOjM1Iix3b3Jrc3BhY2VzPXt7bG9jYXRpb249Im1haW4ubHVhIzMz
+Iix3b3Jrc3BhY2VfaW5kZXg9MX19XV1sejQABAAAAAMAAAAwbmls
+:: [eoc]

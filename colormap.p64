@@ -1,0 +1,65 @@
+picotron cartridge // www.picotron.net
+version 2
+
+:: gfx/
+:: gfx/0.gfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTI0IDIwOjAyOjU1Iixtb2RpZmllZD0iMjAyNC0w
+My0yNCAyMTowOToyNCIscmV2aXNpb249MzhdXWx6NAB4AAAACzEAAPMae1swXT17Ym1wPXB4dQBD
+IBAQBADXAPfQANcALGZsYWdzPTAscGFuX3gIAMp5PTAsem9vbT04fSw3AC-w8DEA------------
+----------------------------------------------------11BtPTh9fQ==
+:: gfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTI0IDIwOjAyOjQ5IixzdG9yZWQ9IjIwMjQtMDMt
+MjQgMjA6MDI6NDkiXV1sejQABAAAAAMAAAAwbmls
+:: main.lua
+--[[pod_format="raw",created="2024-03-24 20:02:41",modified="2024-03-24 21:09:24",revision=287]]
+function _init()
+ -- additive
+ for i=0,63 do
+  for j=0,63 do
+   poke(0x9000+i*64+j,min(i+j,63))
+  end
+ end
+ for i=0,63 do
+   poke4(0x5000+i*4,0x010101*(i*8))
+ end
+   
+ stripes = userdata("u8", 16, "01010101010101010101010101010101")
+end
+
+function lerp(a,b,t)
+ return a*(1-t)+b*t
+end
+
+_prev_x,_prev_y=0,0
+function _draw()
+ cls()
+ get_display():add(stripes, true, 0, 0, 16, 0, 32, 10000)
+ 
+ for i=0,32,3 do
+	 get_display():add(stripes, true, 0, i*300*16, 16, 0, 16, 30*16)
+ end
+ 
+ -- enable colormap 1
+ poke(0x5508,0x3f|0x40)
+ --poke(0x5509,0x3f|0x40)
+ poke(0x550b,0x3f|0x40)
+ poke(0x550a,0x3f|0x40)
+ circfill(_prev_x,_prev_y,24,40|0x40)
+ local mx,my=mouse()
+ circfill(mx,my,24,20|0x40)
+ local s=get_spr(0)|0x40
+ sspr(s,0,0,16,16,mx,my,64,64)
+ _prev_x=lerp(_prev_x,mx,0.01)
+ _prev_y=lerp(_prev_y,my,0.01)
+  -- reset
+ poke(0x5508,0x3f)
+ poke(0x5509,0x3f)
+ poke(0x550a,0x3f)
+ poke(0x550b,0x00)
+end
+:: .info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTAzLTI0IDIwOjAyOjI1IixzdG9yZWQ9IjIwMjQtMDMt
+MjQgMjE6MDk6MjQiLHdvcmtzcGFjZXM9e3tsb2NhdGlvbj0ibWFpbi5sdWEjMzEiLHdvcmtzcGFj
+ZV9pbmRleD0xfSx7bG9jYXRpb249ImdmeC8wLmdmeCIsd29ya3NwYWNlX2luZGV4PTJ9fV1dbHo0
+AAQAAAADAAAAMG5pbA==
+:: [eoc]

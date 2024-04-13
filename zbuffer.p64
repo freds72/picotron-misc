@@ -1,0 +1,517 @@
+picotron cartridge // www.picotron.net
+version 2
+
+:: gfx/
+:: map/
+:: sfx/
+:: gfx/0.gfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEwIDE3OjA2OjE2Iixtb2RpZmllZD0iMjAyNC0w
+NC0xMCAyMDo0NDoyNiIscmV2aXNpb249MTE1XV1sejQAbQAAAAUxAADzFHtbMF09e2JtcD1weHUA
+QyAQEATw8CxmbGFncz0wLHBhbl94CADPeT0wLHpvb209OH0sMQD-------------------------
+---------------------------------------nUG09OH19
+:: gfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEwIDE3OjA2OjE2IixzdG9yZWQ9IjIwMjQtMDQt
+MTAgMTc6MDY6MTYiXV1sejQABAAAAAMAAAAwbmls
+:: main.lua
+--[[pod_format="raw",created="2024-04-10 17:06:16",modified="2024-04-10 20:44:26",revision=229]]
+-- textured 3d demo
+-- by freds72
+
+-- globals
+local cam
+
+-- helper functions
+function lerp(a,b,t)
+	return a*(1-t)+b*t
+end
+
+-- vector helpers
+local v_up={0,1,0}
+
+function make_v(a,b)
+	return {
+		b[1]-a[1],
+		b[2]-a[2],
+		b[3]-a[3]}
+end
+function v_clone(v)
+	return {v[1],v[2],v[3]}
+end
+function v_dot(a,b)
+	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
+end
+
+function v_scale(v,scale)
+	return {
+		v[1]*scale,
+		v[2]*scale,
+		v[3]*scale
+	}
+end
+function v_add(v,dv,scale)
+	scale=scale or 1
+	return {
+		v[1]+scale*dv[1],
+		v[2]+scale*dv[2],
+		v[3]+scale*dv[3]}
+end
+-- safe vector length
+function v_len(v)
+	local x,y,z=v[1],v[2],v[3]
+	local d=max(max(abs(x),abs(y)),abs(z))
+	if d<0.001 then return 0 end
+	x=x/d
+	y=y/d
+	z=z/d
+	return d*sqrt(x*x+y*y+z*z)
+end
+function v_normz(v)
+	local x,y,z=v[1],v[2],v[3]
+	local d=x*x+y*y+z*z
+	if d>0.001 then
+		d=sqrt(d)
+		return {x/d,y/d,z/d}
+	end
+	return v
+end
+
+function v_lerp(a,b,t)
+	return {
+		lerp(a[1],b[1],t),
+		lerp(a[2],b[2],t),
+		lerp(a[3],b[3],t)
+	}
+end
+function v_cross(a,b)
+	local ax,ay,az=a[1],a[2],a[3]
+	local bx,by,bz=b[1],b[2],b[3]
+	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
+end
+
+-- inline matrix invert
+-- inc. position
+function m_inv_x_v(m,v)
+	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
+	return {m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z}
+end
+
+-- returns foward vector from matrix
+function m_fwd(m)
+	return {m[9],m[10],m[11]}
+end
+-- returns up vector from matrix
+function m_up(m)
+	return {m[5],m[6],m[7]}
+end
+function m_x_v(m,v)
+	local x,y,z=v[1],v[2],v[3]
+	return {m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]}
+end
+
+function m_x_m(a,b)
+	local a11,a12,a13,a21,a22,a23,a31,a32,a33=a[1],a[5],a[9],a[2],a[6],a[10],a[3],a[7],a[11]
+	local b11,b12,b13,b14,b21,b22,b23,b24,b31,b32,b33,b34=b[1],b[5],b[9],b[13],b[2],b[6],b[10],b[14],b[3],b[7],b[11],b[15]
+
+	return {
+			a11*b11+a12*b21+a13*b31,a21*b11+a22*b21+a23*b31,a31*b11+a32*b21+a33*b31,0,
+			a11*b12+a12*b22+a13*b32,a21*b12+a22*b22+a23*b32,a31*b12+a32*b22+a33*b32,0,
+			a11*b13+a12*b23+a13*b33,a21*b13+a22*b23+a23*b33,a31*b13+a32*b23+a33*b33,0,
+			a11*b14+a12*b24+a13*b34+a[13],a21*b14+a22*b24+a23*b34+a[14],a31*b14+a32*b24+a33*b34+a[15],1
+		}
+end
+
+function make_m_from_euler(x,y,z)
+	local a,b = cos(x),-sin(x)
+	local c,d = cos(y),-sin(y)
+	local e,f = cos(z),-sin(z)
+
+	-- yxz order
+	local ce,cf,de,df=c*e,c*f,d*e,d*f
+ 	return {
+ 		ce+df*b,a*f,cf*b-de,0,
+  		de*b-cf,a*e,df+ce*b,0,
+  		a*d,-b,a*c,0,
+  		0,0,0,1}
+end
+
+function prepare_model(model)
+	for _,f in pairs(model.f) do
+		-- de-reference vertex indices
+		for i=1,#f do
+            local vi=f[i]+1
+			f[i]=model.v[vi]            
+		end
+
+		-- normal
+		f.n=v_normz(
+				v_cross(
+					make_v(f[1],f[#f]),
+					make_v(f[1],f[2])))
+		-- fast viz check
+		f.cp=v_dot(f.n,f[1])
+	end
+	return model
+end
+
+-- models
+local cube_model=prepare_model({  
+		v={
+            {1.0,1.0,1.0},
+            {1.0,1.0,-1.0},
+            {1.0,-1.0,1.0},
+            {1.0,-1.0,-1.0},
+            {-1.0,1.0,1.0},
+            {-1.0,1.0,-1.0},
+            {-1.0,-1.0,1.0},
+            {-1.0,-1.0,-1.0},
+            {-1.0,0.7,0.7},
+            {1.0,0.7,0.7},
+            {1.0,-0.7,0.7},
+            {-1.0,-0.7,0.7},
+            {-1.0,-0.7,-0.7},
+            {1.0,-0.7,-0.7},
+            {1.0,0.7,-0.7},
+            {-1.0,0.7,-0.7},
+            {-0.7,-0.7,-0.7},
+            {-0.7,-1.0,-0.7},
+            {-0.7,1.0,-0.7},
+            {-0.7,0.7,-0.7},
+            {-0.7,-1.0,0.7},
+            {-0.7,-0.7,0.7},
+            {-0.7,1.0,0.7},
+            {-0.7,0.7,0.7},
+            {0.7,-1.0,-0.7},
+            {0.7,-0.7,-0.7},
+            {0.7,0.7,-0.7},
+            {0.7,1.0,-0.7},
+            {0.7,-1.0,0.7},
+            {0.7,1.0,0.7},
+            {0.7,0.7,0.7},
+            {0.7,-0.7,0.7},
+        },
+		-- faces + vertex uv's
+		f={
+            {7,6,11,12},
+            {15,8,4,5},
+            {10,2,3,13},
+            {14,1,0,9},
+            {20,6,7,17},
+            {24,3,2,28},
+            {5,4,22,18},
+            {27,29,0,1},
+            {7,5,1,3},
+            {21,31,28,20},
+            {11,6,4,8},
+            {24,17,7,3},
+            {10,9,0,2},
+            {1,5,18,27},
+            {30,23,22,29},
+            {19,18,22,23},
+            {21,20,17,16},
+            {17,24,25,16},
+            {27,18,19,26},
+            {24,28,31,25},
+            {26,30,29,27},
+            {21,11,8,23},
+            {20,28,2,6},
+            {14,13,3,1},
+            {22,4,0,29},
+            {31,30,9,10},
+            {16,25,26,19},
+            {23,30,31,21},
+            {25,31,10,13},
+            {16,12,11,21},
+            {25,13,14,26},
+            {16,19,15,12},
+            {23,8,15,19},
+            {30,26,14,9},
+            {2,0,4,6},
+            {5,7,12,15},
+		}
+	})
+
+function make_cam(x0,y0,focal)
+	local yangle,zangle=0,0
+	local dyangle,dzangle=0,0
+
+	return {
+		pos={0,0,0},
+		control=function(self,dist)
+			if btn(0) then dyangle=dyangle+1 end
+			if btn(1) then dyangle=dyangle-1 end
+			if btn(2) then dzangle=dzangle+1 end
+			if btn(3) then dzangle=dzangle-1 end
+			yangle=yangle+dyangle/228--+0.01
+			zangle=zangle+dzangle/228--+0.005
+			-- friction
+			dyangle=dyangle*0.8
+			dzangle=dzangle*0.8
+
+			local m=make_m_from_euler(zangle,yangle,0)
+			local pos=v_scale(m_fwd(m),dist)
+
+			-- inverse view matrix
+			-- only invert orientation part
+			m[2],m[5]=m[5],m[2]
+			m[3],m[9]=m[9],m[3]
+			m[7],m[10]=m[10],m[7]		
+
+			self.m=m_x_m(m,{
+				1,0,0,0,
+				0,1,0,0,
+				0,0,1,0,
+				-pos[1],-pos[2],-pos[3],1
+			})
+			
+			self.pos=pos
+		end,
+		project=function(self,verts)
+			local n,f=0.1,2
+			for i,v in pairs(verts) do
+				local x,y,z=v[1],v[2],v[3]
+				z=z*f/(f-n)+f*n/(f-n)
+				local w=160/z
+				verts[i]={x=x0+x*w,y=y0-y*w,w=w,u=v.u,v=v.v}
+			end
+			return verts
+		end
+	}
+end
+
+function draw_model(model,m,cam)
+	-- cam pos in object space
+	local cam_pos=m_inv_x_v(m,cam.pos)
+	
+	-- object to world
+	-- world to cam
+	m=m_x_m(cam.m,m)
+
+	for i,face in pairs(model.f) do
+		-- is face visible?
+		if v_dot(face.n,cam_pos)<face.cp then
+            local verts={}
+			for k=1,#face do
+				-- transform to world
+				local p=m_x_v(m,face[k])
+				verts[k]=p
+			end
+			-- transform to camera & draw			
+			polytex(cam:project(verts),#verts,ss,i)
+		end
+	end
+end
+
+
+function _init()
+	cam=make_cam(480/2,270/2,96.5)
+	
+	-- create a texture bitmap and draw something on it
+	ss = userdata("u8",64,1)
+	-- 
+	set_draw_target(ss)
+	for i=0,63 do
+	 pset(i,0,i)
+	end
+	set_draw_target()
+	
+	-- backup colormap
+	memcpy(0xc000,0x8000,0x1000)
+	-- depth colormap
+	local mem=0xc000+64*64
+    for src=0,63 do
+        for dst=0,63 do
+           poke(mem+64*src+dst,src<dst and dst or src)
+        end
+    end
+    -- backup 
+    for i=0,63 do
+     poke4(0x5000+i*4,0x010101*(i*4))
+    end
+    
+   -- depth buffer
+   _depth = userdata("u8",480,270)
+   -- color buffer
+   _diffuse = userdata("u8",480,270)
+   
+   --[[ scenario
+   colormap with 0x40
+   sort npc
+   draw npc to depth
+   colormap default
+   draw npc to diffuse
+         
+   colormap with i<j
+   draw geometry back to front on depth   
+   draw geometry back to front on screen
+   
+   depth>>6 (keeps only non occluded npc)
+   diffuse *= depth
+   
+   spr diffuse on screen
+   ]]
+end
+
+function _update()
+	cam:control(4)
+end
+
+local _t=time()
+function _draw()
+	cls(0)
+
+     	
+   camera(96,0)
+   memcpy(0x8000,0xc000,0x1000)
+	local m={
+		1,0,0,0,
+		0,1,0,0,
+		0,0,1,0,
+		0,0,-0.5,1}
+	--draw_model(cube_model,m,cam)	
+  	
+   -- draw "npc" polygons depth
+   camera(-96,0)
+   local verts=cam:project({m_x_v(cam.m,{0,2*cos(time()/8),-0.5})})
+   local v=verts[1]
+   poke(0x5509,0x3f|0x40)  
+   poke(0x550b,0x3f|0x40)
+   for i=0x8000,0x9000-1 do
+   		poke(i,@i|0x40)
+   end
+   circfill(v.x,v.y,-v.w/8,min(63,flr(-v.w))|0x40)
+   --circfill(v.x,v.y,abs(v.w/4),v.w//1)
+   poke(0x550b,0x00)   
+  	poke(0x5509,0x3f)
+  	
+  	memcpy(0x8000,0xd000,0x1000)
+	local m={
+		1,0,0,0,
+		0,1,0,0,
+		0,0,1,0,
+		0,0,-0.5,1}
+	draw_model(cube_model,m,cam)	
+
+   camera()
+   memcpy(0x8000,0xc000,0x1000)
+   
+	--print(string.format("%f %f %f",v.x,v.y,v.w//1),2,32,8)	
+   local mx,my=mouse()
+   print(tostr(get_display()[mx+my*480],1),mx+4,my-8,12)
+   
+	local t1=time()
+	print("tline3d DEMO\nangle:"..(flr(100*cam.m[1])/10).."\nfps: "..flr(1/(t1-_t)),2,2,8)
+	_t = t1
+end
+
+-->8 {}
+function polytex(p,np,texture,color)
+	local miny,maxy,mini=32000,-32000
+	-- find extent
+	for i=1,np do
+		local pi=p[i]
+		local y=pi.y
+		if y<miny then
+			mini,miny=i,y
+		end
+		if y>maxy then
+			maxy=y
+		end
+	end
+
+	--data for left & right edges:
+	local lj,rj,ly,ry,lx,lu,lv,lw,ldx,ldu,ldv,ldw,rx,ru,rv,rw,rdx,rdu,rdv,rdw=mini,mini,miny,miny
+	if maxy>=270 then
+		maxy=270-1
+	end
+	if miny<0 then
+		miny=-1
+	end
+	for y=flr(miny)+1,maxy do
+		--maybe update to next vert
+		while ly<y do
+			local v0=p[lj]
+			lj=lj+1
+			if lj>np then lj=1 end
+			local v1=p[lj]
+			local p0,p1=v0,v1
+			local y0,y1=p0.y,p1.y
+			local dy=y1-y0
+			ly=flr(y1)
+			lx=p0.x
+			lw=p0.w
+			ldx=(p1.x-lx)/dy
+			local w1=p1.w
+			ldw=(w1-lw)/dy
+			--sub-pixel correction
+			local cy=y-y0
+			lx=lx+cy*ldx
+			lw=lw+cy*ldw
+		end   
+		while ry<y do
+			local v0=p[rj]
+			rj=rj-1
+			if rj<1 then rj=np end
+			local v1=p[rj]
+			local p0,p1=v0,v1
+			local y0,y1=p0.y,p1.y
+			local dy=y1-y0
+			ry=flr(y1)
+			rx=p0.x
+			rw=p0.w
+			rdx=(p1.x-rx)/dy
+			local w1=p1.w
+			rdw=(w1-rw)/dy
+			--sub-pixel correction
+			local cy=y-y0
+			rx=rx+cy*rdx
+			rw=rw+cy*rdw
+		end	
+	 
+      	--
+      	local dx=lx-rx
+      	if dx<0 then
+        	tline3d(texture,rx,y,lx,y,640,0,640,0,rw,lw)         	     
+		end
+		lx=lx+ldx
+		lw=lw+ldw
+		rx=rx+rdx
+		rw=rw+rdw
+    end
+end
+
+function polytex2(p,np,texture,color)
+    local p0=p[np]
+    local x0,y0=p0.x,p0.y
+    for i=1,np do
+        local p1=p[i]
+        local x1,y1=p1.x,p1.y
+        line(x0,y0,x1,y1,7)
+        x0,y0=x1,y1
+    end
+end
+:: map/0.map
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEwIDE3OjA2OjE2Iixtb2RpZmllZD0iMjAyNC0w
+NC0xMCAyMDo0NDoyNiIscmV2aXNpb249MTE1XV1sejQAaAAAAFgQAADwCHt7Ym1wPXVzZXJkYXRh
+KCJpMTYiLDMyAwAvIjABAP--------------------vxCCIpLGhpZGRlbj1mYWxzZSxwYW5feD0w
+CADSeT0wLHRpbGVfaD0xNgoAEHcKAIB6b29tPTF9fQ==
+:: map/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEwIDE3OjA2OjE2IixzdG9yZWQ9IjIwMjQtMDQt
+MTAgMTc6MDY6MTYiXV1sejQABAAAAAMAAAAwbmls
+:: sfx/0.sfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEwIDE3OjA2OjE3Iixtb2RpZmllZD0iMjAyNC0w
+NC0xMCAyMDo0NDoyNiIscmV2aXNpb249MTE0XV1sejQAEQEAAMEIAADwJ3B4dQADKAAAAwAED0AQ
+Ag4AAaABIAKgDgAPEAAN8MoBAgMEBQYHAA--kAgJCgsPDA8NDw4PDxAA8AANDxEPEg8TDxQPFQ8W
+DxcTAPEBDxgPGQ8aDxsPHA8dDx4PHxQA8QAgDyEPIg8jDyQPJQ8mDycUAPEAKA8pDyoPKw8sDy0P
+Lg8vFADxADAPMQ8yDzMPNA81DzYPNxQA-wU4DzkPOg87DzwPPQ8_Dz8AD--w-wEA6-8nWgEQBg8g
+EAEgASAB8AACEAIMEAEgDyEgATAPQPDDDygP--DGD-gKD-8PgA-3Dw0B8AkBEAYMMAD--7of-wEA
+zL-oD0AADUD--7DwcAoA--9kH-8BAJdQ-----x8=
+:: sfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEwIDE3OjA2OjE2IixzdG9yZWQ9IjIwMjQtMDQt
+MTAgMTc6MDY6MTYiXV1sejQABAAAAAMAAAAwbmls
+:: .info.pod
+b64$LS1bW3BvZCxydW50aW1lPTUsc3RvcmVkPSIyMDI0LTA0LTEwIDIwOjQ0OjI2Iix3b3Jrc3Bh
+Y2VzPXt7bG9jYXRpb249Im1haW4ubHVhIzMyOCIsd29ya3NwYWNlX2luZGV4PTF9LHtsb2NhdGlv
+bj0iZ2Z4LzAuZ2Z4Iix3b3Jrc3BhY2VfaW5kZXg9Mn0se2xvY2F0aW9uPSJtYXAvMC5tYXAiLHdv
+cmtzcGFjZV9pbmRleD0zfSx7bG9jYXRpb249InNmeC8wLnNmeCIsd29ya3NwYWNlX2luZGV4PTR9
+fV1dbHo0AAQAAAADAAAAMG5pbA==
+:: [eoc]

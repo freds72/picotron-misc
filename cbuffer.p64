@@ -1,0 +1,101 @@
+picotron cartridge // www.picotron.net
+version 2
+
+:: gfx/
+:: map/
+:: sfx/
+:: gfx/0.gfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEzIDA2OjIzOjI0Iixtb2RpZmllZD0iMjAyNC0w
+NC0xMyAwNzowMTo0NiIscmV2aXNpb249MTFdXWx6NABtAAAABTEAAPMUe1swXT17Ym1wPXB4dQBD
+IBAQBPDwLGZsYWdzPTAscGFuX3gIAM95PTAsem9vbT04fSwxAP--------------------------
+-------------------------------------_dQbT04fX0=
+:: gfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEzIDA2OjIzOjI0IixzdG9yZWQ9IjIwMjQtMDQt
+MTMgMDY6MjM6MjQiXV1sejQABAAAAAMAAAAwbmls
+:: main.lua
+--[[pod_format="raw",created="2024-04-13 06:23:24",modified="2024-04-13 07:01:46",revision=21]]
+function add_span(root,x0,x1)
+ if(not root) return {x0=x0,x1=x1}
+ -- left
+ -- xxxxx
+ --       ****
+ if x1<root.x0 then
+ 	root.left=add_span(root.left,x0,x1)
+ 	return
+ end
+ -- right
+ --       xxxx
+ --  ****
+ if x0>root.x1 then
+ 	root.right=add_span(root.right,x0,x1)
+ 	return
+ end
+ 
+ -- straddling right
+ --    xxxxxxx
+ --  *******
+ if x1>root.x1 then
+  root.right=add_span(root.right,root.x1+1,x1)
+  return
+ end
+ -- straddling left
+ -- xxxxxxx
+ --     *******
+ if x0<root.x0 then
+  root.left=add_span(root.left,x0,root.x0-1)
+  return
+ end
+  
+ -- hidding
+ --    xx
+ --  *******
+ return root 
+end
+
+function print_spans(root)
+ if(not root) return
+ local s=""
+ for i=1,root.x0-1 do
+  s..=" "
+ end
+ for i=root.x0,root.x1 do
+  s..="x"
+ end
+ print(s)
+ print_spans(root.left)
+ print_spans(root.right)
+end
+
+local root=add_span(nil,5,12)
+add_span(root,5,18)
+add_span(root,6,9)
+add_span(root,1,29)
+print_spans(root)
+
+
+:: map/0.map
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEzIDA2OjIzOjI0Iixtb2RpZmllZD0iMjAyNC0w
+NC0xMyAwNzowMTo0NiIscmV2aXNpb249MTFdXWx6NABUAAAARBAAAPAIe3tibXA9dXNlcmRhdGEo
+ImkxNiIsMzIDAC8iMAEA--------------------_6EiKSxwYW5feD0wCADSeT0wLHRpbGVfaD0x
+NgoAYHc9MTZ9fQ==
+:: map/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEzIDA2OjIzOjI0IixzdG9yZWQ9IjIwMjQtMDQt
+MTMgMDY6MjM6MjQiXV1sejQABAAAAAMAAAAwbmls
+:: sfx/0.sfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEzIDA2OjIzOjI0Iixtb2RpZmllZD0iMjAyNC0w
+NC0xMyAwNzowMTo0NiIscmV2aXNpb249MTBdXWx6NAARAQAAwQgAAPAncHh1AAMoAAADAAQPQBAC
+DgABoAEgAqAOAA8QAA3wygECAwQFBgcAD-_QCAkKCw8MDw0PDg8PEADwAA0PEQ8SDxMPFA8VDxYP
+FxMA8QEPGA8ZDxoPGw8cDx0PHg8fFADxACAPIQ8iDyMPJA8lDyYPJxQA8QAoDykPKg8rDywPLQ8u
+Dy8UAPEAMA8xDzIPMw80DzUPNg83FAD-BTgPOQ86DzsPPA89Dz4PPwAP--D-AQDr-ydaARAGDyAQ
+ASABIAHwAAIQAgwQASAPISABMA9A8MMPKA--8MYP_AoP-w_AD-cPDQHwCQEQBgwwAP--uh--AQDM
+v_gPQAANQP--sPBwCgD--2Qf-wEAl1D-----Hw==
+:: sfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTEzIDA2OjIzOjI0IixzdG9yZWQ9IjIwMjQtMDQt
+MTMgMDY6MjM6MjQiXV1sejQABAAAAAMAAAAwbmls
+:: .info.pod
+b64$LS1bW3BvZCxydW50aW1lPTUsc3RvcmVkPSIyMDI0LTA0LTEzIDA3OjAxOjQ2Iix3b3Jrc3Bh
+Y2VzPXt7bG9jYXRpb249Im1haW4ubHVhIzU2Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0aW9u
+PSJnZngvMC5nZngiLHdvcmtzcGFjZV9pbmRleD0yfSx7bG9jYXRpb249Im1hcC8wLm1hcCIsd29y
+a3NwYWNlX2luZGV4PTN9LHtsb2NhdGlvbj0ic2Z4LzAuc2Z4Iix3b3Jrc3BhY2VfaW5kZXg9NH19
+XV1sejQABAAAAAMAAAAwbmls
+:: [eoc]
