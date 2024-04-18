@@ -4,170 +4,40 @@ version 2
 :: gfx/
 :: map/
 :: sfx/
-:: bsp.lua
---[[pod_format="raw",created="2024-04-14 17:10:23",modified="2024-04-15 19:58:18",revision=445]]
---[[
-  ________
-  |      |
-  |  -   |
-------------   
-  | |_|  |
-  |      |
-  |______|
-]]   
-
-local vertices={
-	-- outer
-	[0]=vec(0,0),
-	vec(1,0),
-	vec(3,0),
-	vec(3,2),
-	vec(3,3),
-	vec(3,4),
-	vec(0,4),
-	vec(0,3),
-	-- inner pillar
-	vec(1,2),
-	vec(2,2),
-	vec(2,3),
-	vec(1,3)}
-local bsp={
- 	plane=vec(0,1,-3),
- 	[false]={
- 		plane=vec(-1,0,1),
- 		[false]={
- 			plane=vec(0,-1,2),
- 			[false]={
- 				{3,4},
- 				{10,9}
- 			},
- 			[true]={
- 				{1,2},
- 				{2,3},
- 				{9,8}
- 			}
- 		},
- 		[true]={
- 			{7,0},
- 			{0,1},
- 			{8,11}	
- 		}
- 	},
- 	[true]={
- 		{6,7},
- 		{5,6},
- 		{4,5},
- 		{11,10}
- 	}
-}
-
-function init_bsp(node)
-	if not node.plane then
-		for i=1,#node do
-			local face=node[i]
-			local v0,v1=vertices[face[1]],vertices[face[2]]
-			local n=v1-v0
-			n.x,n.y=-n.y,n.x
-			n:div(n:magnitude(),true)
-			face.n = n
-			face.cp = n:dot(v0)
-		end
-		return
-	end
-	init_bsp(node[true])
-	init_bsp(node[false])
-end
-init_bsp(bsp)
-
-function traverse_bsp(node,pos,out)
-	-- leaf?
-	if(not node.plane) add(out,node) return
-	
-	local side=node.plane:dot(pos)<0
-	traverse_bsp(node[side],pos,out)
-	traverse_bsp(node[not side],pos,out)		
-end
-
-function draw_bsp2d(cam)
-	local out={}
-	local scale=32
-	local pos=cam.pos
-	traverse_bsp(bsp,vec(pos.x,pos.y,1),out)
-	for i=1,#out do
-		local c=vec(0,0)
-		for j,face in pairs(out[i]) do	
-			
-			local v0,v1=vertices[face[1]],vertices[face[2]]
-			line(scale*v0.x,scale*v0.y,scale*v1.x,scale*v1.y,1+i)
-			c+=v0
-			c+=v1
-		end
-		c:div(#out[i]*2,true)
-		print(i,scale*c.x,scale*c.y,8)	
-	end
-	local x,y=pos.x*scale,pos.y*scale
-	pset(x,y,8)
-	local c,s=cos(cam.angle),-sin(cam.angle)
-	line(x,y,x+8*c,y+8*s,8)
-	print(string.format("%0.5f %0.5f",pos.x,pos.y),2,250,8)
-end
-
-function draw_bsp3d(cam)
-	local out={}
-	traverse_bsp(bsp,vec(cam.pos.x,cam.pos.y,1),out)
-	for i=1,#out do
-		for j,face in pairs(out[i]) do							
-			local v0,v1=vertices[face[1]],vertices[face[2]]
-			if face.n:dot(cam.pos)>face.cp then
-				local v0,v1=cam:project(v0),cam:project(v1)
-				if v0.w<0 and v1.w<0 then
-					local h0,h1=240*v0.w,240*v1.w
-					local poly={
-						{x=v0.x,y=135-h0,w=v0.w,uv=vec(0,0)},
-						{x=v1.x,y=135-h1,w=v1.w,uv=vec(0,0)},
-						{x=v1.x,y=135+h1,w=v1.w,uv=vec(0,0)},
-						{x=v0.x,y=135+h0,w=v0.w,uv=vec(0,0)}}
-					EdgeRasterizer.addSurface(poly,4,{scale=1},8+face.n.x)
-				end
-			end
-		end
-	end
-end
-:: camera.lua
---[[pod_format="raw",created="2024-04-15 06:05:53",modified="2024-04-15 19:58:18",revision=345]]
-function make_cam(p,angle)
-	local m=userdata("f64",4,4)
-	return {
-		pos=p:copy(),
-		angle=angle,
-		track=function(self,p,angle)
-			local c,s=cos(angle),-sin(angle)
-			m:set(0,0,
-				c, s,0,0,
-				-s,c,0,0,
-				0, 0,1,0,
-				0, 0,0,1)
-			local t=userdata("f64",4,4)
-			t:set(0,0,
-				1,0,0,-p.x,
-				0,1,0,-p.y,
-				0,0,1,0,
-				0,0,0,1)
-			m=t:matmul(m)
-			self.angle=angle
-			self.pos=p:copy()
-		end,
-		project=function(self,v)
-			local x,y=v.x-self.pos.x,v.y-self.pos.y
-			local c,s=sin(self.angle),cos(self.angle)
-			x,y=c*x+s*y,-s*x+c*y
-			local w=1/y
-			return {x=480/2+240*x*w,w=w}
-		end
-	}
-end
-:: edge_rasterizer.lua
---[[pod_format="raw",created="2024-04-15 16:29:09",modified="2024-04-15 19:58:18",revision=254]]
+:: gfx/0.gfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzowOSIscmV2aXNpb249NjIyXV1sejQAkgAAAEMxAAD3CXtbMF09e2JtcD1weHUA
+QyAQEAR8fxx8fgIASf4AfH4CAOMsZmxhZ3M9MCxwYW5feAgAynk9MCx6b29tPTh9LFAAV35-F359
+AgBJ-QB_fQIAD1AAHC-w8DEA----------------------------------------------------
+------------plBtPTh9fQ==
+:: gfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzoxMCIsc3RvcmVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIl1dbHo0AAQAAAADAAAA
+MG5pbA==
+:: map/0.map
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzowOSIscmV2aXNpb249NjIxXV1sejQAaAAAAFgQAADwCHt7Ym1wPXVzZXJkYXRh
+KCJpMTYiLDMyAwAvIjABAP--------------------vxCCIpLGhpZGRlbj1mYWxzZSxwYW5feD0w
+CADSeT0wLHRpbGVfaD0xNgoAEHcKAIB6b29tPTF9fQ==
+:: map/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzoxMCIsc3RvcmVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIl1dbHo0AAQAAAADAAAA
+MG5pbA==
+:: sfx/0.sfx
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzowOSIscmV2aXNpb249NjE2XV1sejQAMQEAAMkIAADwJ3B4dQADKAAAAwAED0AQ
+Ag4AAaABIAKgDgAPEAAN8MoBAgMEBQYHAA--kAgJCgsPDA8NDw4PDxAA8AANDxEPEg8TDxQPFQ8W
+DxcTAPEBDxgPGQ8aDxsPHA8dDx4PHxQA8QAgDyEPIg8jDyQPJQ8mDycUAPEAKA8pDyoPKw8sDy0P
+Lg8vFADxADAPMQ8yDzMPNA81DzYPNxQA-wU4DzkPOg87DzwPPQ8_Dz8AD--w-wEA6-AjWgEQBg8g
+EAEgASAB8AACEAIMEAEgDyEgATAPQPDDDygP--DGD-gKD-8PgA-3Dw0B8AkxABAjMQAiCBAyACMP
+FzMArw-5IA9aIA-68L84AAQfDGgABQ8wAP--ch--AQDMv_gPQAANQP--sPBwCgD--2Qf-wEAl1D-
+----Hw==
+:: sfx/.info.pod
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzoxMCIsc3RvcmVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIl1dbHo0AAQAAAADAAAA
+MG5pbA==
+:: basic_rasterizer.lua
+--[[pod_format="raw",created="2024-04-16 06:18:07",modified="2024-04-16 06:20:09",revision=1]]
 --[[pod_format="raw",created="2024-03-17 18:46:13",modified="2024-03-29 12:41:49",revision=26]]
 -- edge collecting rasterizer
 local function makeEdgeIterator(mini,miny,maxy,p,np,texture,c)
@@ -228,61 +98,9 @@ local function makeEdgeIterator(mini,miny,maxy,p,np,texture,c)
 end
 
 
-function sort(data)
- local n = #data
-
- -- form a max heap
- for i = flr(n / 2) + 1, 1, -1 do
-  -- m is the index of the max child
-  local parent, value, m = i, data[i], i + i
-  local key = value.key 
-  
-  while m <= n do
-   -- find the max child
-   if ((m < n) and (data[m + 1].key > data[m].key)) m += 1
-   local mval = data[m]
-   if (key > mval.key) break
-   data[parent] = mval
-   parent = m
-   m += m
-  end
-  data[parent] = value
- end 
-
- -- read out the values,
- -- restoring the heap property
- -- after each step
- for i = n, 2, -1 do
-  -- swap root with last
-  local value = data[i]
-  data[i], data[1] = data[1], value
-
-  -- restore the heap
-  local parent, terminate, m = 1, i - 1, 2
-  local key = value.key 
-  
-  while m <= terminate do
-   local mval = data[m]
-   local mkey = mval.key
-   if (m < terminate) and (data[m + 1].key > mkey) then
-    m += 1
-    mval = data[m]
-    mkey = mval.key
-   end
-   if (key > mkey) break
-   data[parent] = mval
-   parent = m
-   m += m
-  end  
-  
-  data[parent] = value
- end
-end
-
 -- surfaces at y
 local surfaces={}
-local order=0
-EdgeRasterizer={
+SpanRasterizer={
     frame = 0,
     beginFrame=function(self)
         self.frame += 1
@@ -340,25 +158,367 @@ EdgeRasterizer={
 			clip()
     end
 }
-:: gfx/0.gfx
-b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
-NC0xNSAxOTo1ODoxOCIscmV2aXNpb249NDA4XV1sejQAbQAAAAUxAADzFHtbMF09e2JtcD1weHUA
-QyAQEATw8CxmbGFncz0wLHBhbl94CADPeT0wLHpvb209OH0sMQD-------------------------
----------------------------------------nUG09OH19
-:: gfx/.info.pod
-b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixzdG9yZWQ9IjIwMjQtMDQt
-MTQgMDY6NTc6MTEiXV1sejQABAAAAAMAAAAwbmls
+:: bsp.lua
+--[[pod_format="raw",created="2024-04-14 17:10:23",modified="2024-04-17 08:23:09",revision=695]]
+--[[
+  ________
+  |      |
+  |  -   |
+------------   
+  | |_|  |
+  |      |
+  |______|
+]]   
+
+local vertices={
+	-- outer
+	[0]=vec(0,0),
+	vec(1,0),
+	vec(3,0),
+	vec(3,2),
+	vec(3,3),
+	vec(3,4),
+	vec(0,4),
+	vec(0,3),
+	-- inner pillar
+	vec(1,2),
+	vec(2,2),
+	vec(2,3),
+	vec(1,3)}
+local bsp={
+ 	plane=vec(0,1,-3),
+ 	[false]={
+ 		plane=vec(-1,0,1),
+ 		[false]={
+ 			plane=vec(0,-1,2),
+ 			[false]={
+ 				{3,4},
+ 				{10,9,tex=1}
+ 			},
+ 			[true]={
+ 				{1,2},
+ 				{2,3},
+ 				{9,8,tex=1}
+ 			}
+ 		},
+ 		[true]={
+ 			{7,0},
+ 			{0,1},
+ 			{8,11,tex=1}	
+ 		}
+ 	},
+ 	[true]={
+ 		{6,7},
+ 		{5,6},
+ 		{4,5},
+ 		{11,10,tex=1}
+ 	}
+}
+
+function init_bsp(node)
+	if not node.plane then
+		for i=1,#node do
+			local face=node[i]
+			local v0,v1=vertices[face[1]],vertices[face[2]]
+			local n=v1-v0
+			n.x,n.y=-n.y,n.x
+			n:div(n:magnitude(),true)
+			face.n = n
+			face.cp = n:dot(v0)
+			-- texture
+			face.tex={scale=1,raw=	get_spr(face.tex or 0)}		
+		end
+		return
+	end
+	init_bsp(node[true])
+	init_bsp(node[false])
+end
+init_bsp(bsp)
+
+function traverse_bsp(node,pos,out,invert)
+	-- leaf?
+	if not node.plane then
+	 	add(out,node)
+	 return
+	end
+	
+	local side=node.plane:dot(pos)<0
+	traverse_bsp(node[not side],pos,out)
+	traverse_bsp(node[side],pos,out)		
+end
+
+function draw_bsp2d(cam)
+	local out={}
+	local scale=32
+	local pos=cam.pos
+	traverse_bsp(bsp,vec(pos.x,pos.y,1),out)
+	for i=1,#out do
+		local c=vec(0,0)
+		for j,face in pairs(out[i]) do	
+			
+			local v0,v1=vertices[face[1]],vertices[face[2]]
+			line(scale*v0.x,scale*v0.y,scale*v1.x,scale*v1.y,1+i)
+			c+=v0
+			c+=v1
+		end
+		c:div(#out[i]*2,true)
+		print(i,scale*c.x,scale*c.y,8)	
+	end
+	local x,y=pos.x*scale,pos.y*scale
+	pset(x,y,8)
+	local c,s=cos(cam.angle),-sin(cam.angle)
+	line(x,y,x+8*c,y+8*s,8)
+	print(string.format("%0.5f %0.5f",pos.x,pos.y),2,250,8)
+end
+
+function draw_bsp3d(rasterizer,cam)
+	local out={}
+	traverse_bsp(bsp,vec(cam.pos.x,cam.pos.y,1),out,rasterizer.front_to_back)
+	for i=1,#out do
+		local leaf=out[i]
+		for j=1,#leaf do
+			local face=leaf[j]							
+			local v0,v1=vertices[face[1]],vertices[face[2]]
+			if face.n:dot(cam.pos)>face.cp then
+				local v0,v1=cam:project(v0),cam:project(v1)
+				if v0.w<0 and v1.w<0 then
+					local h0,h1=240*v0.w,240*v1.w
+					local poly={
+						{x=v0.x,y=135-h0,w=v0.w,uv=vec(0,0)},
+						{x=v1.x,y=135-h1,w=v1.w,uv=vec(0,32)},
+						{x=v1.x,y=135+h1,w=v1.w,uv=vec(32,32)},
+						{x=v0.x,y=135+h0,w=v0.w,uv=vec(32,0)}}
+					rasterizer.addSurface(poly,4,face.tex,8+face.n.x)
+				end
+			end
+		end
+	end
+end
+:: camera.lua
+--[[pod_format="raw",created="2024-04-15 06:05:53",modified="2024-04-17 08:23:09",revision=565]]
+function make_cam(p,angle)
+	local m=userdata("f64",4,4)
+	return {
+		pos=p:copy(),
+		angle=angle,
+		track=function(self,p,angle)
+			local c,s=cos(angle),-sin(angle)
+			m:set(0,0,
+				c, s,0,0,
+				-s,c,0,0,
+				0, 0,1,0,
+				0, 0,0,1)
+			local t=userdata("f64",4,4)
+			t:set(0,0,
+				1,0,0,-p.x,
+				0,1,0,-p.y,
+				0,0,1,0,
+				0,0,0,1)
+			m=t:matmul(m)
+			self.angle=angle
+			self.pos=p:copy()
+		end,
+		project=function(self,v)
+			local x,y=v.x-self.pos.x,v.y-self.pos.y
+			local c,s=sin(self.angle),cos(self.angle)
+			x,y=c*x+s*y,-s*x+c*y
+			local w=1/y
+			return {x=480/2+240*x*w,w=w}
+		end
+	}
+end
+:: edge_rasterizer.lua
+--[[pod_format="raw",created="2024-04-15 16:29:09",modified="2024-04-17 08:23:09",revision=517]]
+--[[pod_format="raw",created="2024-03-17 18:46:13",modified="2024-03-29 12:41:49",revision=26]]
+-- edge collecting rasterizer
+local _spans
+local function makeEdgeIterator(mini,miny,maxy,p,np,texture,c)
+	local mipscale=texture.scale
+	--data for left & right edges:
+	local lj,rj,ly,ry,lr,dlr=mini,mini,miny,miny,userdata("f64",8),userdata("f64",8)
+	return function(y,l,dl)
+		if y<=maxy then
+			--maybe update to next vert
+			while ly<y do
+				local p0=p[lj]
+				lj=lj+1
+				if lj>np then lj=1 end
+				local p1=p[lj]
+				local y0,y1=p0.y,p1.y
+				local dy=y1-y0
+				ly=y1\1
+				local w0,w1,uv0,uv1=p0.w/mipscale,p1.w/mipscale,p0.uv,p1.uv			
+				l:set(0,p0.x,uv0.x*w0,uv0.y*w0,p0.w)
+				dl:set(0,p1.x,uv1.x*w1,uv1.y*w1,p1.w)
+				dl=(dl-l)/dy
+				lr:copy(l+dl*(y-y0),true)			
+				dlr:copy(dl,true)
+			end   
+			while ry<y do
+				local p0=p[rj]
+				rj=rj-1
+				if rj<1 then rj=np end
+				local p1=p[rj]
+				local y0,y1=p0.y,p1.y
+				local dy=y1-y0
+				ry=y1\1
+				local w0,w1,uv0,uv1=p0.w/mipscale,p1.w/mipscale,p0.uv,p1.uv			
+				l:set(0,p0.x,uv0.x*w0,uv0.y*w0,p0.w)
+				dl:set(0,p1.x,uv1.x*w1,uv1.y*w1,p1.w)
+				dl=(dl-l)/dy
+				lr:copy(l+dl*(y-y0),true, nil, 4)			
+				dlr:copy(dl,true,nil,4)
+			end
+			
+			--local rx,ru,rv,rw,lx,lu,lv,lw=lr:get(0,8)
+
+			--tline3d(texture.raw,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
+			--[[
+			_spans=add_span(_spans,lx\1,rx\1-1,function()
+				rectfill(lx,y,rx,y,1+((c+16)%31))
+			end)
+			]]
+			_spans=add_span(_spans,y,lr[4]\1,lr[0]\1-1,lr,texture)
+			
+			--rectfill(lx,y,rx,y,1+((c+16)%31))
+			--spanfill(lx//1,rx//1-1,y,lu,lv,lw,du,dv,dw,tline3d,texture)
+			-- rectfill(lx,y,rx,y,1+((c+16)%31))
+			
+			lr:add(dlr,true)
+			return true
+  		end
+	end
+end
+
+
+function sort(data)
+ local n = #data
+
+ -- form a max heap
+ for i = flr(n / 2) + 1, 1, -1 do
+  -- m is the index of the max child
+  local parent, value, m = i, data[i], i + i
+  local key = value.key 
+  
+  while m <= n do
+   -- find the max child
+   if ((m < n) and (data[m + 1].key > data[m].key)) m += 1
+   local mval = data[m]
+   if (key > mval.key) break
+   data[parent] = mval
+   parent = m
+   m += m
+  end
+  data[parent] = value
+ end 
+
+ -- read out the values,
+ -- restoring the heap property
+ -- after each step
+ for i = n, 2, -1 do
+  -- swap root with last
+  local value = data[i]
+  data[i], data[1] = data[1], value
+
+  -- restore the heap
+  local parent, terminate, m = 1, i - 1, 2
+  local key = value.key 
+  
+  while m <= terminate do
+   local mval = data[m]
+   local mkey = mval.key
+   if (m < terminate) and (data[m + 1].key > mkey) then
+    m += 1
+    mval = data[m]
+    mkey = mval.key
+   end
+   if (key > mkey) break
+   data[parent] = mval
+   parent = m
+   m += m
+  end  
+  
+  data[parent] = value
+ end
+end
+
+-- surfaces at y
+local surfaces={}
+local order=0
+EdgeRasterizer={
+    frame = 0,
+    front_to_back=false,
+    beginFrame=function(self)
+        self.frame += 1
+        order=0
+    end,
+    -- push a surface to rasterize
+    addSurface=function(p,np,texture,c)
+				local miny,maxy,mini=32000,-32000
+				-- find extent
+				for i=1,np do
+					local pi=p[i]
+					local y=pi.y
+					if y<miny then
+						mini,miny=i,y
+					end
+					if y>maxy then
+						maxy=y
+					end
+				end
+				if maxy>=270 then
+					maxy=269
+				end
+				if miny<0 then
+					miny=-1
+				end
+				local y=miny\1+1
+				local tmp=surfaces[y] or {}
+				add(tmp,{key=order,it=makeEdgeIterator(mini,miny,maxy,p,np,texture,c)})
+				order-=1
+				surfaces[y]=tmp
+    end,	
+    addQuad=function(x0,y0,x1,y1,w,c)
+        -- todo
+    end,
+    endFrame=function()
+			local aet={}
+			local l=userdata("f64",4)
+			local dl=userdata("f64",4)
+			for y=0,269 do
+				local new_edges=surfaces[y]
+				if new_edges then
+					for i,surf in next,new_edges do
+						aet[#aet+1]=surf
+					end
+					-- keep insertion order!!
+					sort(aet)
+				end
+				_spans=nil
+				for i=#aet,1,-1 do
+					local e=aet[i]
+					if(not e.it(y,l,dl)) deli(aet,i)
+				end
+			end	
+			surfaces={}
+			clip()
+    end
+}
 :: main.lua
---[[pod_format="raw",created="2024-04-14 06:57:11",modified="2024-04-15 19:58:18",revision=529]]
+--[[pod_format="raw",created="2024-04-14 06:57:11",modified="2024-04-17 08:23:09",revision=804]]
 include "bsp.lua"
 include "camera.lua"
 include "edge_rasterizer.lua"
+include "span_rasterizer.lua"
 include "spans.lua"
 
+--local rasterizer = EdgeRasterizer
+local rasterizer = SpanRasterizer
 local _pos,_angle,_vel=vec(-1.4,0.5),0.10,0
 
 function _init()
 	_cam=make_cam(_pos,_angle)
+	tline3d(0x300)
 end
 
 function _update()
@@ -379,47 +539,135 @@ end
 
 function _draw()
 	cls()
-	EdgeRasterizer:beginFrame()
-	draw_bsp3d(_cam)
-	EdgeRasterizer:endFrame()
+	rasterizer:beginFrame()
+	draw_bsp3d(rasterizer,_cam)
+	rasterizer:endFrame()
 	draw_bsp2d(_cam)
 	
 	print(string.format("%0.1f%%",100*stat(1)),430,260,8)
 end
 
-:: map/0.map
-b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
-NC0xNSAxOTo1ODoxOCIscmV2aXNpb249NDA4XV1sejQAaAAAAFgQAADwCHt7Ym1wPXVzZXJkYXRh
-KCJpMTYiLDMyAwAvIjABAP--------------------vxCCIpLGhpZGRlbj1mYWxzZSxwYW5feD0w
-CADSeT0wLHRpbGVfaD0xNgoAEHcKAIB6b29tPTF9fQ==
-:: map/.info.pod
-b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixzdG9yZWQ9IjIwMjQtMDQt
-MTQgMDY6NTc6MTEiXV1sejQABAAAAAMAAAAwbmls
-:: sfx/0.sfx
-b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixtb2RpZmllZD0iMjAyNC0w
-NC0xNSAxOTo1ODoxOCIscmV2aXNpb249NDAzXV1sejQAEQEAAMEIAADwJ3B4dQADKAAAAwAED0AQ
-Ag4AAaABIAKgDgAPEAAN8MoBAgMEBQYHAA--kAgJCgsPDA8NDw4PDxAA8AANDxEPEg8TDxQPFQ8W
-DxcTAPEBDxgPGQ8aDxsPHA8dDx4PHxQA8QAgDyEPIg8jDyQPJQ8mDycUAPEAKA8pDyoPKw8sDy0P
-Lg8vFADxADAPMQ8yDzMPNA81DzYPNxQA-wU4DzkPOg87DzwPPQ8_Dz8AD--w-wEA6-8nWgEQBg8g
-EAEgASAB8AACEAIMEAEgDyEgATAPQPDDDygP--DGD-gKD-8PgA-3Dw0B8AkBEAYMMAD--7of-wEA
-zL-oD0AADUD--7DwcAoA--9kH-8BAJdQ-----x8=
-:: sfx/.info.pod
-b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE0IDA2OjU3OjExIixzdG9yZWQ9IjIwMjQtMDQt
-MTQgMDY6NTc6MTEiXV1sejQABAAAAAMAAAAwbmls
-:: spans.lua
---[[pod_format="raw",created="2024-04-15 17:03:10",modified="2024-04-15 19:58:18",revision=178]]
-function add_span(root,x0,x1,fn)
- -- empty
- if(not root) return {x0=x0,x1=x1,fn=fn}
+:: span_rasterizer.lua
+--[[pod_format="raw",created="2024-04-16 06:20:17",modified="2024-04-17 08:23:09",revision=294]]
+--[[pod_format="raw",created="2024-03-17 18:46:13",modified="2024-03-29 12:41:49",revision=26]]
 
- -- left
- if x1<root.x0 then
-  root.left=add_span(root.left,x0,x1,fn)
-  return root
+-- span rasterizer (full screen)
+
+-- surfaces at y
+local _spans
+local _l=userdata("f64",4)
+local _dl=userdata("f64",4)
+local _lr,_dlr=userdata("f64",8),userdata("f64",8)
+SpanRasterizer={
+    frame = 0,
+    front_to_back=true,
+    beginFrame=function(self)
+        self.frame += 1
+        _spans={}
+    end,
+    -- push a surface to rasterize
+    addSurface=function(p,np,texture,c)
+		local miny,maxy,mini=32000,-32000
+		-- find extent
+		for i=1,np do
+			local pi=p[i]
+			local y=pi.y
+			if y<miny then
+				mini,miny=i,y
+			end
+			if y>maxy then
+				maxy=y
+			end
+		end
+		if maxy>=270 then
+			maxy=269
+		end
+		if miny<0 then
+			miny=-1
+		end
+		local mipscale=texture.scale
+		--data for left & right edges:
+		local lj,rj,ly,ry,lr,dlr=mini,mini,miny,miny,_lr,_dlr
+		local l,dl=_l,_dl
+		local _spans=_spans
+		for y=miny\1+1,maxy\1 do
+			--maybe update to next vert
+			while ly<y do
+				local p0=p[lj]
+				lj=lj+1
+				if lj>np then lj=1 end
+				local p1=p[lj]
+				local y0,y1=p0.y,p1.y
+				local dy=y1-y0
+				ly=y1\1
+				local w0,w1,uv0,uv1=p0.w/mipscale,p1.w/mipscale,p0.uv,p1.uv			
+				l:set(0,p0.x,uv0.x*w0,uv0.y*w0,p0.w)
+				dl:set(0,p1.x,uv1.x*w1,uv1.y*w1,p1.w)
+				dl=(dl-l)/dy
+				lr:copy(l+dl*(y-y0),true)			
+				dlr:copy(dl,true)
+			end   
+			while ry<y do
+				local p0=p[rj]
+				rj=rj-1
+				if rj<1 then rj=np end
+				local p1=p[rj]
+				local y0,y1=p0.y,p1.y
+				local dy=y1-y0
+				ry=y1\1
+				local w0,w1,uv0,uv1=p0.w/mipscale,p1.w/mipscale,p0.uv,p1.uv			
+				l:set(0,p0.x,uv0.x*w0,uv0.y*w0,p0.w)
+				dl:set(0,p1.x,uv1.x*w1,uv1.y*w1,p1.w)
+				dl=(dl-l)/dy
+				lr:copy(l+dl*(y-y0),true, nil, 4)			
+				dlr:copy(dl,true,nil,4)
+			end
+			
+			--local rx,ru,rv,rw,lx,lu,lv,lw=lr:get(0,8)
+			
+			--tline3d(texture.raw,lx,y,rx,y,lu,lv,ru,rv,lw,rw)
+			_spans[y]=add_span(_spans[y],y,lr[4]\1,lr[0]\1-1,lr,texture)
+			--rectfill(lx,y,rx,y,1+((c+16)%31))
+			--spanfill(lx//1,rx//1-1,y,lu,lv,lw,du,dv,dw,tline3d,texture)
+			-- rectfill(lx,y,rx,y,1+((c+16)%31))
+			
+			lr:add(dlr,true)
+		end
+  	 end,	
+    addQuad=function(x0,y0,x1,y1,w,c)
+        -- todo
+    end,
+    endFrame=function()
+		clip()
+		camera()
+    end
+}
+:: spans.lua
+--[[pod_format="raw",created="2024-04-15 17:03:10",modified="2024-04-17 08:23:09",revision=489]]
+function add_span(root,y,x0,x1,fn,tex)
+ if(x1<0 or x0>479) return root
+ -- empty = visible \o/
+ if not root then
+ 	clip(x0,0,x1-x0+1,270)
+ 	-- slower :/
+ 	--poke2(0x5528,x0)
+ 	--poke2(0x552c,x1+1)
+ 	
+ 	--rectfill(span.x0,y,span.x1,y,depth)
+	local rx,ru,rv,rw,lx,lu,lv,lw=fn:get(0,8)
+	--rectfill(lx,y,rx,y,-rw*16)	
+	tline3d(tex.raw,lx,y,rx,y,lu,lv,ru,rv,lw,rw,0x300)
+	--if(key('f')) flip()
+ 	return {x0=x0,x1=x1}
  end
- 
- if x0>root.x1 then
-  root.right = add_span(root.right,x0,x1,fn)
+
+ -- left/right
+ local s0,s1=root.x0,root.x1
+ if x1<s0 then
+  root.left=add_span(root.left,y,x0,x1,fn,tex)
+  return root 
+ elseif x0>s1 then
+  root.right = add_span(root.right,y,x0,x1,fn,tex)
   return root
  end
   
@@ -429,14 +677,14 @@ function add_span(root,x0,x1,fn)
  -- stradling left
  -- xxxxx
  --    *****
- if x0<root.x0 then
-  root.left = add_span(root.left,x0,root.x0-1,fn)
+ if x0<s0 then
+  root.left = add_span(root.left,y,x0,s0-1,fn,tex)
  end
  -- stradling right
  --      xxxxxx
  --    *****
- if x1>root.x1 then
-  root.right = add_span(root.right,root.x1+1,x1,fn)
+ if x1>s1 then
+  root.right = add_span(root.right,y,s1+1,x1,fn,tex)
  end
  
  return root
@@ -456,23 +704,15 @@ function print_spans(root,c)
  print_spans(root.left,8)
  print_spans(root.right,11)
 end
-
-function render_spans(y,span)
-	if(not span) return
-	clip(span.x0,y,span.x1-span.x0+1,1)
-	--rectfill(span.x0,y,span.x1,y,depth)
-	span.fn()
-	--if(key('f')) flip()
-	render_spans(y,span.left)
-	render_spans(y,span.right)
-end
 :: .info.pod
-b64$LS1bW3BvZCxydW50aW1lPTUsc3RvcmVkPSIyMDI0LTA0LTE1IDE5OjU4OjE5Iix3b3Jrc3Bh
-Y2VzPXt7bG9jYXRpb249Im1haW4ubHVhIzM1Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0aW9u
-PSJic3AubHVhIzEyMiIsd29ya3NwYWNlX2luZGV4PTF9LHtsb2NhdGlvbj0iY2FtZXJhLmx1YSMy
-NSIsd29ya3NwYWNlX2luZGV4PTF9LHtsb2NhdGlvbj0iZWRnZV9yYXN0ZXJpemVyLmx1YSM0MCIs
-d29ya3NwYWNlX2luZGV4PTF9LHtsb2NhdGlvbj0ic3BhbnMubHVhIzIiLHdvcmtzcGFjZV9pbmRl
-eD0xfSx7bG9jYXRpb249ImdmeC8wLmdmeCIsd29ya3NwYWNlX2luZGV4PTJ9LHtsb2NhdGlvbj0i
-bWFwLzAubWFwIix3b3Jrc3BhY2VfaW5kZXg9M30se2xvY2F0aW9uPSJzZngvMC5zZngiLHdvcmtz
-cGFjZV9pbmRleD00fX1dXWx6NAAEAAAAAwAAADBuaWw=
+b64$LS1bW3BvZCxjcmVhdGVkPSIyMDI0LTA0LTE2IDE2OjQ1OjI3Iixtb2RpZmllZD0iMjAyNC0w
+NC0xNyAwODoyMzoxMCIscnVudGltZT02LHN0b3JlZD0iMjAyNC0wNC0xNiAwNzowNToyMiIsd29y
+a3NwYWNlcz17e2xvY2F0aW9uPSJtYWluLmx1YSM3Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0
+aW9uPSJic3AubHVhIzY3Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0aW9uPSJjYW1lcmEubHVh
+IzI1Iix3b3Jrc3BhY2VfaW5kZXg9MX0se2xvY2F0aW9uPSJlZGdlX3Jhc3Rlcml6ZXIubHVhIzgi
+LHdvcmtzcGFjZV9pbmRleD0xfSx7bG9jYXRpb249InNwYW5zLmx1YSMxOCIsd29ya3NwYWNlX2lu
+ZGV4PTF9LHtsb2NhdGlvbj0ic3Bhbl9yYXN0ZXJpemVyLmx1YSM3OCIsd29ya3NwYWNlX2luZGV4
+PTF9LHtsb2NhdGlvbj0iZ2Z4LzAuZ2Z4Iix3b3Jrc3BhY2VfaW5kZXg9Mn0se2xvY2F0aW9uPSJt
+YXAvMC5tYXAiLHdvcmtzcGFjZV9pbmRleD0zfSx7bG9jYXRpb249InNmeC8wLnNmeCIsd29ya3Nw
+YWNlX2luZGV4PTR9fV1dbHo0AAQAAAADAAAAMG5pbA==
 :: [eoc]
